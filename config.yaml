@@ -1,0 +1,16 @@
+# Copyright 2021 Canonical Ltd.
+# See LICENSE file for licensing details.
+
+options:
+  git-sync::repo:
+    type: string
+    description: URL to repo to sync against
+    default: ""
+  git-sync::branch:
+    type: string
+    description: branch to sync
+    default: ""
+  git-sync::wait:
+    type: int
+    description: git-sync wait interval between syncs (seconds).
+    default: 60

@@ -1,0 +1,28 @@
+# Copyright 2021 Canonical Ltd.
+# See LICENSE file for licensing details.
+
+name: lma-rules-k8s
+description: |
+  lma-rules is ...
+summary: |
+  Push user (3rd-party) rules to LMA charms.
+
+containers:
+  git-sync:
+    resource: git-sync-image
+    mounts:
+      - storage: content-from-git
+        location: /git
+
+resources:
+  git-sync-image:
+    type: oci-image
+    description: OCI image for git-sync
+    upstream-source: k8s.gcr.io/git-sync/git-sync:v3.3.4
+
+storage:
+  content-from-git:
+    type: filesystem
+    description: >
+      Where to publish the checked-out content from the git repo.
+# no peer relations by design: only one unit per rules repo makes sense
