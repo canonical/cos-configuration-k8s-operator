@@ -24,5 +24,15 @@ storage:
   content-from-git:
     type: filesystem
     description: >
-      Where to publish the checked-out content from the git repo.
+      Where to store the checked-out content from the git repo.
+    # TODO instead of specifying a location here, try use OF facility for obtaining path by name
+    location: /git
+
+provides:
+  prometheus-config:
+    interface: prometheus_scrape
+
 # no peer relations by design: only one unit per rules repo makes sense
+peers:
+  replicas:
+    interface: lma_rules_replica

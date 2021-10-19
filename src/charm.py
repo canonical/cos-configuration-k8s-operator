@@ -5,13 +5,15 @@
 """Deploy lma-rules to a Kubernetes environment."""
 import hashlib
 import logging
+import os
 from abc import ABC, abstractmethod
 
+from charms.prometheus_k8s.v0.prometheus_scrape import RuleFilesProvider
 from ops.charm import CharmBase
 from ops.framework import StoredState
 from ops.main import main
 from ops.model import ActiveStatus, BlockedStatus, MaintenanceStatus
-from ops.pebble import Layer, ChangeError
+from ops.pebble import ChangeError, Layer
 
 logger = logging.getLogger(__name__)
 
@@ -56,7 +58,11 @@ class GitSyncLayerConfigError(ValueError):
 
 
 class GitSyncLayer(LayerBuilder):
-    """Helper class for building a git-sync layer."""
+    """Helper class for building a git-sync layer.
+
+    Raises:
+        GitSyncLayerConfigError, if the config is invalid.
+    """
 
     def __init__(self, service_name: str, repo: str, branch: str, wait: int):
         super().__init__(service_name)
@@ -79,7 +85,7 @@ class GitSyncLayer(LayerBuilder):
             "-depth 1 "
             f"-wait {self.wait} "
             # "-git-config k:v,k2:v2 "
-            "-root /git "
+            "-root /git "  # TODO do not hardcode
             "-dest repo"  # so charm code doesn't need to delete
         )
         logger.debug("command: %s", cmd)
@@ -111,7 +117,23 @@ class LMARulesCharm(CharmBase):
         self.framework.observe(self.on.upgrade_charm, self._on_upgrade_charm)
         self.framework.observe(self.on.git_sync_pebble_ready, self._on_git_sync_pebble_ready)
         self.framework.observe(self.on.start, self._on_start)
-        self.framework.observe(self.on.update_status, self._on_update_status)
+
+        self.prom_config_subset = RuleFilesProvider(
+            self,
+            "prometheus-config",
+            dir_path=os.path.join(
+                self.meta.storages["content-from-git"].location,
+                "repo",  # TODO do not hardcode
+                self.config["prometheus_relpath"],
+            ),
+            recursive=True,
+        )
+        # a temporary hack to have the rules reloaded when the git-sync container is up after charm
+        self.framework.observe(
+            self.on.git_sync_pebble_ready, self.prom_config_subset._update_relation_data
+        )
+
+        logger.info("charm location: [%s]", self.meta.storages["content-from-git"].location)
 
     def _common_exit_hook(self) -> None:
         """Event processing hook that is common to all events to ensure idempotency."""
@@ -158,11 +180,17 @@ class LMARulesCharm(CharmBase):
 
         plan = self.container.get_plan()
 
-        if self._service_name not in plan.services or overlay.services != plan.services or not self.container.get_service(self._service_name).is_running():
-            # this still returns ModelError :( if (service := self.container.get_service(self._service_name)) and service.is_running():
+        if (
+            self._service_name not in plan.services
+            or overlay.services != plan.services
+            or not self.container.get_service(self._service_name).is_running()
+        ):
+            # this still returns ModelError:
+            # ( if (service := self.container.get_service(self._service_name))
+            # and service.is_running():
             try:
                 self.container.stop(self._service_name)
-            except:
+            except:  # noqa E722
                 pass
             self.container.remove_path("/git/repo", recursive=True)
             self.container.add_layer(self._layer_name, overlay, combine=True)
@@ -206,17 +234,10 @@ class LMARulesCharm(CharmBase):
         self.container.restart(self._service_name)
 
         service_running = (
-                              service := self.container.get_service(self._service_name)
-                          ) and service.is_running()
+            service := self.container.get_service(self._service_name)
+        ) and service.is_running()
         if not service_running:
             raise ServiceRestartError("Attempted to restart service but it is not running")
-
-    def _on_update_status(self, _):
-        """Event handler for UpdateStatusEvent.
-
-        Logs list of peers, uptime and version info.
-        """
-        pass
 
 
 if __name__ == "__main__":

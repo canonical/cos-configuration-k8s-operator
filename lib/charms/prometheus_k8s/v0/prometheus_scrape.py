@@ -293,11 +293,13 @@ data using the `prometheus_scrape_host` key. While the
 relation data provide eponymous information.
 
 """
-
+import dataclasses
 import json
 import logging
 import os
+from collections import defaultdict
 from pathlib import Path
+from typing import List, Union
 
 import yaml
 from ops.charm import CharmBase, RelationMeta, RelationRole
@@ -398,7 +400,7 @@ def _validate_relation_by_interface_and_direction(
     relation_name: str,
     expected_relation_interface: str,
     expected_relation_role: RelationRole,
-) -> str:
+):
     """Verifies that a relation has the necessary characteristics.
 
     Verifies that the `relation_name` provided: (1) exists in metadata.yaml,
@@ -472,6 +474,102 @@ def _sanitize_scrape_configuration(job) -> dict:
     sanitized_job = DEFAULT_JOB.copy()
     sanitized_job.update({key: value for key, value in job.items() if key in ALLOWED_KEYS})
     return sanitized_job
+
+
+@dataclasses.dataclass(frozen=True)
+class JujuTopology:
+    """Dataclass for storing and formatting juju topology information."""
+
+    model: str
+    model_uuid: str
+    application: str
+    charm_name: str
+
+    @staticmethod
+    def from_charm(charm):
+        """Factory method for creating the topology dataclass from a given charm."""
+        return JujuTopology(
+            model=charm.model.name,
+            model_uuid=charm.model.uuid,
+            application=charm.model.app.name,
+            charm_name=charm.meta.name,
+        )
+
+    def as_str_short_form(self) -> str:
+        """Format the topology information into a terse string."""
+        return f"{self.model}_{self.model_uuid}_{self.application}"
+
+    def as_str_long_form(self) -> str:
+        """Format the topology information into a verbose string."""
+        return 'juju_model="{}", juju_model_uuid="{}", juju_application="{}"'.format(
+            self.model, self.model_uuid, self.application
+        )
+
+    def as_dict(self) -> dict:
+        """Format the topology information into a dict."""
+        return dataclasses.asdict(self)
+
+    def as_dict_long_form(self):
+        """Format the topology information into a dict with keys having 'juju_' as prefix."""
+        return {
+            "juju_model": self.model,
+            "juju_model_uuid": self.model_uuid,
+            "juju_application": self.application,
+        }
+
+    def render(self, template: str):
+        """Render a juju-topology template string with topology info."""
+        return template.replace("%%juju_topology%%", self.as_str_long_form())
+
+
+def load_alert_rules_from_dir(
+    dir_path: Union[str, Path], /, topology: JujuTopology, *, recursive: bool = False
+) -> List[dict]:
+    """Load alert rules from rule files.
+
+    All rules from files for the same directory are loaded into a single
+    group. The generated name of this group includes juju topology.
+    By default, only the top directory is scanned; for nested scanning, pass `recursive=True`.
+
+    Args:
+        dir_path: directory containing *.rule files (alert rules without groups).
+        topology: a `JujuTopology` instance.
+        recursive: flag indicating whether to scan for rule files recursively.
+
+    Returns:
+        a list of prometheus alert rule groups.
+    """
+    alerts = defaultdict(list)
+    for path in Path(dir_path).glob("**/*.rule" if recursive else "*.rule"):
+        if not path.is_file():
+            continue
+
+        relpath = os.path.relpath(os.path.dirname(path), dir_path)
+        group_name = f"{'' if relpath == '.' else relpath.replace(os.path.sep, '_') + '_'}{topology.as_str_short_form()}_alerts"
+
+        logger.debug("Reading alert rule from %s", path)
+        with path.open() as rule_file:
+            # Load a list of rules from file then add labels and filters
+            try:
+                rule = yaml.safe_load(rule_file)
+            except Exception as e:
+                logger.error("Failed to read alert rules from %s: %s", path.name, e)
+            else:
+                try:
+                    # add "juju_" topology labels
+                    rule.get("labels", {}).update(topology.as_dict_long_form())
+
+                    # insert juju topology filters into a prometheus alert rule
+                    rule["expr"] = topology.render(rule["expr"])
+                except KeyError:
+                    logger.error("Invalid alert rule %s: missing an 'expr' property.", path.name)
+                else:
+                    alerts[group_name].append(rule)
+
+    # Gather all alerts into a list of groups since Prometheus
+    # requires alerts be part of some group
+    groups = [{"name": k, "rules": v} for k, v in alerts.items()]
+    return groups
 
 
 class TargetsChangedEvent(EventBase):
@@ -1027,6 +1125,7 @@ class MetricsEndpointProvider(Object):
             )
 
         super().__init__(charm, relation_name)
+        self.topology = JujuTopology.from_charm(charm)
 
         self._charm = charm
         self._alert_rules_path = alert_rules_path
@@ -1053,7 +1152,7 @@ class MetricsEndpointProvider(Object):
 
         when a metrics provider charm is related to a prometheus charm, the
         metrics provider sets metadata related to its own scrape
-        configutation.  this metadata is set using juju application
+        configuration.  this metadata is set using juju application
         data.  in addition each of the consumer units also sets its own
         host address in juju unit relation data.
         """
@@ -1086,47 +1185,6 @@ class MetricsEndpointProvider(Object):
                 self._charm.model.get_binding(relation).network.bind_address
             )
 
-    def _label_alert_topology(self, rule) -> dict:
-        """Insert juju topology labels into an alert rule.
-
-        Args:
-            rule: a dictionary representing a prometheus alert rule.
-
-        Returns:
-            a dictionary representing prometheus alert rule with juju
-            topology labels.
-        """
-        metadata = self._scrape_metadata
-        labels = rule.get("labels", {})
-        labels["juju_model"] = metadata["model"]
-        labels["juju_model_uuid"] = metadata["model_uuid"]
-        labels["juju_application"] = metadata["application"]
-        rule["labels"] = labels
-        return rule
-
-    def _label_alert_expression(self, rule) -> dict:
-        """Insert juju topology filters into a prometheus alert rule.
-
-        Args:
-            rule: a dictionary representing a prometheus alert rule.
-
-        Returns:
-            a dictionary representing a prometheus alert rule that filters based
-            on juju topology.
-        """
-        metadata = self._scrape_metadata
-        topology = 'juju_model="{}", juju_model_uuid="{}", juju_application="{}"'.format(
-            metadata["model"], metadata["model_uuid"], metadata["application"]
-        )
-
-        if expr := rule.get("expr", None):
-            expr = expr.replace("%%juju_topology%%", topology)
-            rule["expr"] = expr
-        else:
-            logger.error("Invalid alert expression in %s", rule.get("alert"))
-
-        return rule
-
     @property
     def _labeled_alert_groups(self) -> list:
         """Load alert rules from rule files.
@@ -1138,33 +1196,9 @@ class MetricsEndpointProvider(Object):
         Returns:
             a list of prometheus alert rule groups.
         """
-        alerts = []
-        for path in Path(self._alert_rules_path).glob("*.rule"):
-            if not path.is_file():
-                continue
-
-            logger.debug("Reading alert rule from %s", path)
-            with path.open() as rule_file:
-                # Load a list of rules from file then add labels and filters
-                try:
-                    rule = yaml.safe_load(rule_file)
-                    rule = self._label_alert_topology(rule)
-                    rule = self._label_alert_expression(rule)
-                    alerts.append(rule)
-                except Exception as e:
-                    logger.error("Failed to read alert rules from %s: %s", path.name, str(e))
-
-        # Gather all alerts into a list of one group since Prometheus
-        # requires alerts be part of some group
-        groups = []
-        if alerts:
-            metadata = self._scrape_metadata
-            group = {
-                "name": "{model}_{model_uuid}_{application}_alerts".format(**metadata),
-                "rules": alerts,
-            }
-            groups.append(group)
-        return groups
+        return load_alert_rules_from_dir(
+            self._alert_rules_path, topology=self.topology, recursive=False
+        )
 
     @property
     def _scrape_jobs(self) -> list:
@@ -1182,15 +1216,44 @@ class MetricsEndpointProvider(Object):
         """Generate scrape metadata.
 
         Returns:
-            Scrape configutation metadata for this metrics provider charm.
+            Scrape configuration metadata for this metrics provider charm.
         """
-        metadata = {
-            "model": f"{self._charm.model.name}",
-            "model_uuid": f"{self._charm.model.uuid}",
-            "application": f"{self._charm.model.app.name}",
-            "charm_name": f"{self._charm.meta.name}",
-        }
-        return metadata
+        return self.topology.as_dict()
+
+
+class RuleFilesProvider(Object):
+    """TODO."""
+
+    def __init__(self, charm: CharmBase, relation_name: str, dir_path: str, recursive=True):
+        super().__init__(charm, relation_name)
+        self._charm = charm
+        self._relation_name = relation_name
+        self.topology = JujuTopology.from_charm(charm)
+        self.dir_path = dir_path
+        self.recursive = recursive
+
+        events = self._charm.on[self._relation_name]
+        self.framework.observe(events.relation_joined, self._update_relation_data)
+        self.framework.observe(events.relation_changed, self._update_relation_data)
+        self.framework.observe(self._charm.on.leader_elected, self._update_relation_data)
+        self.framework.observe(self._charm.on.config_changed, self._update_relation_data)
+        self.framework.observe(self._charm.on.update_status, self._update_relation_data)  # TODO
+        self.framework.observe(self._charm.on.upgrade_charm, self._update_relation_data)
+
+    def _update_relation_data(self, event: EventBase):
+        """Update all app relation data with alert rules."""
+        logger.info("Updating relation data with rule files from disk")
+        if not self._charm.unit.is_leader():
+            return
+
+        if alert_groups := load_alert_rules_from_dir(
+            self.dir_path, self.topology, recursive=self.recursive
+        ):
+            logger.debug("ALERT RULE GROUPS: %s", alert_groups)
+            for relation in self._charm.model.relations[self._relation_name]:
+                relation.data[self._charm.app]["alert_rules"] = json.dumps(
+                    {"groups": alert_groups}
+                )
 
 
 class MetricsEndpointAggregator(Object):

@@ -14,3 +14,7 @@ options:
     type: int
     description: git-sync wait interval between syncs (seconds).
     default: 60
+  prometheus_relpath:
+    type: string
+    description: relative path in repo to prometheus rules
+    default: "prometheus"
