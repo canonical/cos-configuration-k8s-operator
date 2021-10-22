@@ -17,4 +17,4 @@ options:
   prometheus_relpath:
     type: string
     description: relative path in repo to prometheus rules
-    default: "prometheus"
+    default: ""
