@@ -26,7 +26,7 @@ def sha256(hashable) -> str:
 
 
 class LayerBuilder(ABC):
-    """Helper class for building OF layers."""
+    """Base helper class for building OF layers."""
 
     def __init__(self, name: str):
         self.name = name
@@ -53,25 +53,28 @@ class LayerBuilder(ABC):
         )
 
 
-class GitSyncLayerConfigError(ValueError):
-    """Custom exception for invalid git-sync configurations."""
+class LayerConfigError(ValueError):
+    """Custom exception for invalid layer configurations."""
 
 
 class GitSyncLayer(LayerBuilder):
     """Helper class for building a git-sync layer.
 
+    This layer is used for launching a git-sync (https://github.com/kubernetes/git-sync) container
+    with custom arguments.
+
     Raises:
-        GitSyncLayerConfigError, if the config is invalid.
+        LayerConfigError, if the config is invalid.
     """
 
     def __init__(self, service_name: str, repo: str, branch: str, wait: int):
         super().__init__(service_name)
         if not repo:
-            raise GitSyncLayerConfigError("git-sync config error: invalid repo")
+            raise LayerConfigError("git-sync config error: invalid repo")
         elif not branch:
-            raise GitSyncLayerConfigError("git-sync config error: invalid branch")
+            raise LayerConfigError("git-sync config error: invalid branch")
         elif wait <= 0:
-            raise GitSyncLayerConfigError("git-sync config error: wait time must be > 0")
+            raise LayerConfigError("git-sync config error: wait time must be > 0")
 
         self.repo = repo
         self.branch = branch
@@ -127,10 +130,11 @@ class LMARulesCharm(CharmBase):
                 self.config["prometheus_relpath"],
             ),
             recursive=True,
-        )
-        # a temporary hack to have the rules reloaded when the git-sync container is up after charm
-        self.framework.observe(
-            self.on.git_sync_pebble_ready, self.prom_config_subset._update_relation_data
+            aux_events=[
+                self.on.git_sync_pebble_ready,  # reload rules when git-sync is up after the charm
+                self.on.config_changed,
+                self.on.update_status,  # in lieu of inotify or manual relation-set
+            ],
         )
 
         logger.info("charm location: [%s]", self.meta.storages["content-from-git"].location)
@@ -147,7 +151,7 @@ class LMARulesCharm(CharmBase):
             self._update_layer()
         except ServiceRestartError as e:
             self.unit.status = BlockedStatus(str(e))
-        except GitSyncLayerConfigError as e:
+        except LayerConfigError as e:
             self.unit.status = BlockedStatus(str(e))
         except ChangeError as e:
             self.unit.status = BlockedStatus(str(e))
