@@ -177,9 +177,9 @@ class LMARulesCharm(CharmBase):
         """
         overlay = GitSyncLayer(
             service_name=self._service_name,
-            repo=self.config.get("git-sync::repo"),
-            branch=self.config.get("git-sync::branch"),
-            wait=self.config.get("git-sync::wait"),
+            repo=str(self.config.get("git-sync::repo")),
+            branch=str(self.config.get("git-sync::branch")),
+            wait=int(self.config.get("git-sync::wait")),  # type: ignore[arg-type]
         ).build()
 
         plan = self.container.get_plan()
