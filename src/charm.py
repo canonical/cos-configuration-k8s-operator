@@ -161,7 +161,7 @@ class LMARulesCharm(CharmBase):
         except ServiceRestartError as e:
             self.unit.status = BlockedStatus(str(e))
         except LayerConfigError as e:
-            self.unit.status = BlockedStatus(str(e))
+            self.unit.status = BlockedStatus(str(e) + "; use `juju config`")
         except ChangeError as e:
             self.unit.status = BlockedStatus(str(e))
         else:
