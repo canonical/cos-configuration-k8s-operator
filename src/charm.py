@@ -7,7 +7,7 @@ import hashlib
 import logging
 import os
 from abc import ABC, abstractmethod
-from typing import Final
+from typing import Final, cast
 
 from charms.prometheus_k8s.v0.prometheus_scrape import RuleFilesProvider
 from ops.charm import CharmBase
@@ -183,9 +183,9 @@ class LMARulesCharm(CharmBase):
         """
         overlay = GitSyncLayer(
             service_name=self._service_name,
-            repo=str(self.config.get("git-sync::repo")),
-            branch=str(self.config.get("git-sync::branch")),
-            wait=int(self.config.get("git-sync::wait")),  # type: ignore[arg-type]
+            repo=cast(str, self.config.get("git-sync::repo")),
+            branch=cast(str, self.config.get("git-sync::branch")),
+            wait=cast(int, self.config.get("git-sync::wait")),
             root=self.meta.storages["content-from-git"].location,
         ).build()
 
