@@ -67,7 +67,7 @@ async def test_rule_files_ingested_by_prometheus(ops_test):
     assert _get()["data"]["groups"] == []
 
     # update config and wait for all apps to settle
-    assert ops_test.model.applications["rules"].set_config(
+    await ops_test.model.applications["rules"].set_config(
         {
             "git-sync::repo": "https://github.com/canonical/prometheus-operator.git",
             "git-sync::branch": "main",

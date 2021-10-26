@@ -7,6 +7,7 @@ import hashlib
 import logging
 import os
 from abc import ABC, abstractmethod
+from typing import Final
 
 from charms.prometheus_k8s.v0.prometheus_scrape import RuleFilesProvider
 from ops.charm import CharmBase
@@ -67,7 +68,13 @@ class GitSyncLayer(LayerBuilder):
         LayerConfigError, if the config is invalid.
     """
 
-    def __init__(self, service_name: str, repo: str, branch: str, wait: int):
+    # Directory name under `-root` (passed to `-dest`) into where the repo will be cloned.
+    # Having this option is useful in lieu of a git "overwrite all" flag: any changes will
+    # overwrite any existing files.
+    # Since this is an implementation detail, it is captured here as a class variable.
+    SUBDIR: Final = "repo"
+
+    def __init__(self, service_name: str, repo: str, branch: str, wait: int, root: str):
         super().__init__(service_name)
         if not repo:
             raise LayerConfigError("git-sync config error: invalid repo")
@@ -79,6 +86,7 @@ class GitSyncLayer(LayerBuilder):
         self.repo = repo
         self.branch = branch
         self.wait = wait
+        self.root = root
 
     def _command(self) -> str:
         cmd = (
@@ -88,8 +96,8 @@ class GitSyncLayer(LayerBuilder):
             "-depth 1 "
             f"-wait {self.wait} "
             # "-git-config k:v,k2:v2 "
-            "-root /git "  # TODO do not hardcode
-            "-dest repo"  # so charm code doesn't need to delete
+            f"-root {self.root} "
+            f"-dest {self.SUBDIR}"  # so charm code doesn't need to delete
         )
         logger.debug("command: %s", cmd)
         return cmd
@@ -121,21 +129,22 @@ class LMARulesCharm(CharmBase):
         self.framework.observe(self.on.git_sync_pebble_ready, self._on_git_sync_pebble_ready)
         self.framework.observe(self.on.start, self._on_start)
 
-        self.prom_config_subset = RuleFilesProvider(
+        self.prom_rules_provider = RuleFilesProvider(
             self,
             "prometheus-config",
             dir_path=os.path.join(
                 self.meta.storages["content-from-git"].location,
-                "repo",  # TODO do not hardcode
+                GitSyncLayer.SUBDIR,
                 self.config["prometheus_relpath"],
             ),
             recursive=True,
             aux_events=[
                 self.on.git_sync_pebble_ready,  # reload rules when git-sync is up after the charm
-                self.on.config_changed,
+                self.on.config_changed,  # although changes to git-sync params won't be picked up
                 self.on.update_status,  # in lieu of inotify or manual relation-set
             ],
         )
+        # TODO should git-sync be a charm instead of a sidecar?
 
         logger.info("charm location: [%s]", self.meta.storages["content-from-git"].location)
 
@@ -169,9 +178,6 @@ class LMARulesCharm(CharmBase):
     def _update_layer(self) -> None:
         """Update service layer to reflect changes in peers (replicas).
 
-        Args:
-          restart: a flag indicating if the service should be restarted if a change was detected.
-
         Returns:
           True if anything changed; False otherwise
         """
@@ -180,6 +186,7 @@ class LMARulesCharm(CharmBase):
             repo=str(self.config.get("git-sync::repo")),
             branch=str(self.config.get("git-sync::branch")),
             wait=int(self.config.get("git-sync::wait")),  # type: ignore[arg-type]
+            root=self.meta.storages["content-from-git"].location,
         ).build()
 
         plan = self.container.get_plan()

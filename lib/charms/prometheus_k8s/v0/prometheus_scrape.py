@@ -299,7 +299,7 @@ import logging
 import os
 from collections import defaultdict
 from pathlib import Path
-from typing import List, Union
+from typing import List, Optional, Union
 
 import yaml
 from ops.charm import CharmBase, RelationMeta, RelationRole
@@ -313,7 +313,7 @@ LIBAPI = 0
 
 # Increment this PATCH version before using `charmcraft publish-lib` or reset
 # to 0 if you are raising the major API version
-LIBPATCH = 10
+LIBPATCH = 11
 
 
 logger = logging.getLogger(__name__)
@@ -495,10 +495,29 @@ class JujuTopology:
             charm_name=charm.meta.name,
         )
 
+    @staticmethod
+    def from_relation_data(data):
+        """Factory method for creating the topology dataclass from a relation data dict."""
+        return JujuTopology(
+            model=data["model"],
+            model_uuid=data["model_uuid"],
+            application=data["application"],
+            charm_name=data["charm_name"],
+        )
+
     @property
     def identifier(self) -> str:
         """Format the topology information into a terse string."""
         return f"{self.model}_{self.model_uuid}_{self.application}"
+
+    @property
+    def scrape_identifier(self):
+        """Format the topology information into a scrape identifier."""
+        return "juju_{}_{}_{}_prometheus_scrape".format(
+            self.model,
+            self.model_uuid[:7],
+            self.application,
+        )
 
     @property
     def promql_labels(self) -> str:
@@ -517,11 +536,39 @@ class JujuTopology:
             "juju_model": self.model,
             "juju_model_uuid": self.model_uuid,
             "juju_application": self.application,
+            "juju_charm": self.charm_name,
         }
 
     def render(self, template: str):
         """Render a juju-topology template string with topology info."""
         return template.replace("%%juju_topology%%", self.promql_labels)
+
+
+def load_alert_rule_from_file(path: Path, topology: JujuTopology) -> Optional[dict]:
+    """Load alert rule from a rules file.
+
+    Args:
+        path: path to a *.rule file with a single rule ("groups" super section omitted).
+        topology: a `JujuTopology` instance.
+    """
+    with path.open() as rule_file:
+        # Load a list of rules from file then add labels and filters
+        try:
+            rule = yaml.safe_load(rule_file)
+        except Exception as e:
+            logger.error("Failed to read alert rules from %s: %s", path.name, e)
+            return None
+        else:
+            # add "juju_" topology labels
+            rule.get("labels", {}).update(topology.as_dict_with_promql_labels())
+
+            if "expr" not in rule:
+                logger.error("Invalid alert rule %s: missing an 'expr' property.", path.name)
+                return None
+
+            # insert juju topology filters into a prometheus alert rule
+            rule["expr"] = topology.render(rule["expr"])
+            return rule
 
 
 def load_alert_rules_from_dir(
@@ -543,35 +590,29 @@ def load_alert_rules_from_dir(
     """
     alerts = defaultdict(list)
 
-    for path in filter(Path.is_file, Path(dir_path).glob("**/*.rule" if recursive else "*.rule")):
+    def _group_name(path) -> str:
+        """Generate group name from path and topology.
+
+        The group name is made up of the relative path between the root dir_path, the file path,
+        and topology identifier.
+
+        Args:
+            path: path to rule file.
+        """
         relpath = os.path.relpath(os.path.dirname(path), dir_path)
 
         # Generate group name:
         #  - prefix, from the relative path of the rule file;
         #  - name, from juju topology
-        group_name = (
+        return (
             f"{'' if relpath == '.' else relpath.replace(os.path.sep, '_') + '_'}"
             f"{topology.identifier}_alerts"
         )
 
-        logger.debug("Reading alert rule from %s", path)
-        with path.open() as rule_file:
-            # Load a list of rules from file then add labels and filters
-            try:
-                rule = yaml.safe_load(rule_file)
-            except Exception as e:
-                logger.error("Failed to read alert rules from %s: %s", path.name, e)
-            else:
-                try:
-                    # add "juju_" topology labels
-                    rule.get("labels", {}).update(topology.as_dict_with_promql_labels())
-
-                    # insert juju topology filters into a prometheus alert rule
-                    rule["expr"] = topology.render(rule["expr"])
-                except KeyError:
-                    logger.error("Invalid alert rule %s: missing an 'expr' property.", path.name)
-                else:
-                    alerts[group_name].append(rule)
+    for path in filter(Path.is_file, Path(dir_path).glob("**/*.rule" if recursive else "*.rule")):
+        if rule := load_alert_rule_from_file(path, topology):
+            logger.debug("Reading alert rule from %s", path)
+            alerts[_group_name(path)].append(rule)
 
     # Gather all alerts into a list of groups since Prometheus
     # requires alerts be part of some group
@@ -766,11 +807,7 @@ class MetricsEndpointConsumer(Object):
         if not scrape_metadata:
             return scrape_jobs
 
-        job_name_prefix = "juju_{}_{}_{}_prometheus_scrape".format(
-            scrape_metadata["model"],
-            scrape_metadata["model_uuid"][:7],
-            scrape_metadata["application"],
-        )
+        job_name_prefix = JujuTopology.from_relation_data(scrape_metadata).scrape_identifier
 
         hosts = self._relation_hosts(relation)
 
@@ -886,7 +923,7 @@ class MetricsEndpointConsumer(Object):
 
         Args:
             labels: a dictionary containing Prometheus metric labels.
-            scrape_metadata: scrape related metadata provied by
+            scrape_metadata: scrape related metadata provided by
                 `MetricsEndpointProvider`.
 
         Returns:
@@ -894,10 +931,9 @@ class MetricsEndpointConsumer(Object):
             topology information with the exception of unit name.
         """
         juju_labels = labels.copy()  # deep copy not needed
-        juju_labels["juju_model"] = f"{scrape_metadata['model']}"
-        juju_labels["juju_model_uuid"] = f"{scrape_metadata['model_uuid']}"
-        juju_labels["juju_application"] = f"{scrape_metadata['application']}"
-        juju_labels["juju_charm"] = f"{scrape_metadata['charm_name']}"
+        juju_labels.update(
+            JujuTopology.from_relation_data(scrape_metadata).as_dict_with_promql_labels()
+        )
 
         return juju_labels
 
@@ -968,7 +1004,7 @@ class InvalidAlertRuleFolderPathError(Exception):
 
     def __init__(
         self,
-        alert_rules_absolute_path: Union[str, Path],
+        alert_rules_absolute_path: Path,
         message: str,
     ):
         self.alert_rules_absolute_path = alert_rules_absolute_path
