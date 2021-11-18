@@ -16,5 +16,5 @@ options:
     default: 60
   prometheus_relpath:
     type: string
-    description: relative path in repo to prometheus rules
-    default: ""
+    description: relative path in repo to Prometheus rules
+    default: "/prometheus_alert_rules"
