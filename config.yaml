@@ -5,7 +5,6 @@ options:
   git-sync::repo:
     type: string
     description: URL to repo to sync against
-    default: ""
   git-sync::branch:
     type: string
     description: branch to sync
