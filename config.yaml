@@ -9,7 +9,7 @@ options:
   git-sync::branch:
     type: string
     description: branch to sync
-    default: ""
+    default: main
   git-sync::wait:
     type: int
     description: git-sync wait interval between syncs (seconds).
