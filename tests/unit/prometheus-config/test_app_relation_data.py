@@ -62,31 +62,6 @@ class TestAppRelationData(unittest.TestCase):
             }
         )
 
-    def test_files_appear_on_disk_before_the_last_hook_fired(self):
-        """Scenario: Alert rules show up show up on disk only after config_changed etc. fired."""
-        # GIVEN the current unit is the leader
-        self.harness.set_leader(True)
-
-        # AND prometheus-config relation formed
-        rel_id = self.harness.add_relation("prometheus-config", "prom")
-        self.harness.add_relation_unit(rel_id, "prom/0")
-
-        # AND empty app relation data
-        relation = self.harness.charm.model.get_relation("prometheus-config")
-        rel_data = relation.data[self.harness.charm.app]
-        self.assertEqual(rel_data["alert_rules"], "{}")
-
-        # WHEN the user configures the repo url and the files appear on disk before the last hook
-        # fired
-        self.sandbox.put_file(self.prom_alert_filepath, self.free_standing_rule)
-        self.sandbox.put_file(self.git_hash_file_path, "hash 012345")
-
-        self.harness.update_config({"git_repo": "http://does.not.really.matter/repo.git"})
-
-        # THEN app relation data gets updated
-        rel_data = relation.data[self.harness.charm.app]
-        self.assertNotEqual(rel_data["alert_rules"], "{}")
-
     def test_files_appear_on_disk_after_the_last_hook_fired(self):
         """Scenario: Alert rules show up show up on disk only after config_changed etc. fired."""
         # GIVEN the current unit is the leader
