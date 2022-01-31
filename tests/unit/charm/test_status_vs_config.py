@@ -4,7 +4,9 @@
 
 import logging
 import os
+import random
 import unittest
+from typing import List, Tuple
 from unittest.mock import patch
 
 import hypothesis.strategies as st
@@ -16,6 +18,124 @@ from ops.testing import Harness
 from charm import COSConfigCharm
 
 logger = logging.getLogger(__name__)
+
+
+class TestRandomHooks(unittest.TestCase):
+    """Feature: Charm's status should reflect the completeness of the config.
+
+    Background: For the git-sync sidecar to run, a mandatory config option is needed: repo's URL.
+    As long as it is missing, the charm should be "Blocked".
+    """
+
+    def setUp(self) -> None:
+        self.app_name = "cos-configuration-k8s"
+
+    @patch("charm.KubernetesServicePatch", lambda x, y: None)
+    @given(st.booleans(), st.integers(1, 5))
+    def test_unit_is_blocked_if_no_config_provided(self, is_leader, num_units):
+        """Scenario: Unit is deployed without any user-provided config."""
+        # without the try-finally, if any assertion fails, then hypothesis would reenter without
+        # the cleanup, carrying forward the units that were previously added
+        self.harness = Harness(COSConfigCharm)
+        self.peer_rel_id = self.harness.add_relation("replicas", self.app_name)
+
+        try:
+            self.assertEqual(self.harness.model.app.planned_units(), 1)
+
+            # GIVEN any number of units present
+            for i in range(1, num_units):
+                self.harness.add_relation_unit(self.peer_rel_id, f"{self.app_name}/{i}")
+
+            # AND the current unit could be either a leader or not
+            self.harness.set_leader(is_leader)
+
+            self.harness.begin_with_initial_hooks()
+
+            # WHEN no config is provided
+
+            # THEN the unit goes into blocked state
+            self.assertIsInstance(self.harness.charm.unit.status, BlockedStatus)
+
+            # AND pebble plan is empty
+            plan = self.harness.get_container_pebble_plan(self.harness.charm._container_name)
+            self.assertEqual(plan.to_dict(), {})
+
+        finally:
+            # cleanup added units to prep for reentry by hypothesis' strategy
+            self.harness.cleanup()
+
+    @patch("charm.KubernetesServicePatch", lambda x, y: None)
+    @given(
+        st.booleans(),
+        st.integers(1, 5),
+        st.lists(
+            st.tuples(
+                st.sampled_from(
+                    [
+                        COSConfigCharm.prometheus_relation_name,
+                        COSConfigCharm.loki_relation_name,
+                        COSConfigCharm.grafana_relation_name,
+                    ]
+                ),
+                st.integers(1, 4),
+            ),
+            min_size=1,
+            max_size=3,
+            unique_by=lambda x: x[0],
+        ),
+    )
+    def test_user_adds_units_and_relations_a_while_after_deployment_without_setting_config(
+        self, is_leader, num_peers, rel_list: List[Tuple[str, int]]
+    ):
+        """Scenario: Unit is deployed, and after a while the user adds more relations."""
+        # without the try-finally, if any assertion fails, then hypothesis would reenter without
+        # the cleanup, carrying forward the units that were previously added, etc.
+        self.harness = Harness(COSConfigCharm)
+        self.peer_rel_id = self.harness.add_relation("replicas", self.app_name)
+
+        # GIVEN app starts with a single unit (which is the leader)
+        self.harness.set_leader(True)
+
+        # AND the usual startup hooks fire
+        self.harness.begin_with_initial_hooks()
+
+        try:
+            self.assertEqual(self.harness.model.app.planned_units(), 1)
+
+            # WHEN later on the user adds relations and more units
+            units_to_add = [lambda: self.harness.set_leader(is_leader)]
+            for rel_name, num_remote_units in rel_list:
+                rel_id = self.harness.add_relation(rel_name, f"{self.app_name}-app")
+                units_to_add.extend(
+                    [
+                        lambda rel_id=rel_id, rel_name=rel_name, num_units=num_units: self.harness.add_relation_unit(
+                            rel_id, f"{rel_name}/{num_units}"
+                        )
+                        for num_units in range(num_remote_units)
+                    ]
+                )
+            units_to_add.extend(
+                [
+                    lambda i=i: self.harness.add_relation_unit(
+                        self.peer_rel_id, f"{self.app_name}/{i}"
+                    )
+                    for i in range(1, num_peers)
+                ]
+            )
+            random.shuffle(units_to_add)
+            for hook in units_to_add:
+                hook()
+
+            # THEN the unit stays in blocked state
+            self.assertIsInstance(self.harness.charm.unit.status, BlockedStatus)
+
+            # AND pebble plan is empty
+            plan = self.harness.get_container_pebble_plan(self.harness.charm._container_name)
+            self.assertEqual(plan.to_dict(), {})
+
+        finally:
+            # cleanup added units to prep for reentry by hypothesis' strategy
+            self.harness.cleanup()
 
 
 class TestStatusVsConfig(unittest.TestCase):
