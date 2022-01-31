@@ -1,7 +1,21 @@
 name: Run-Tests
-on: [pull_request, push]
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
 
 jobs:
+  fetch-lib-check:
+    name: Check the charm uses up-to-date charm libraries
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check libs
+        uses: canonical/charm-lib-checker-action@main
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
   static-analysis:
     name: Static analysis
     runs-on: ubuntu-latest
@@ -10,8 +24,12 @@ jobs:
       uses: actions/checkout@v2
     - name: Install dependencies
       run: python3 -m pip install tox
-    - name: Run static analysis
-      run: tox -vve static
+    - name: Run static analysis (charm)
+      run: tox -vve static-charm
+    - name: Run static analysis (unit tests)
+      run: tox -vve static-unit
+    - name: Run static analysis (integration tests)
+      run: tox -vve static-integration
   lint:
     name: Lint
     runs-on: ubuntu-latest

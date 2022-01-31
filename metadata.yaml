@@ -1,11 +1,12 @@
 # Copyright 2021 Canonical Ltd.
 # See LICENSE file for licensing details.
 
-name: lma-rules-k8s
+name: cos-configuration-k8s
 description: |
-  lma-rules is ...
+  cos-configuration fetches alert rules and other settings specified in a Git repository, and
+  forwards them to downstream prometheus, loki anf grafana charms.
 summary: |
-  Push user (3rd-party) rules to LMA charms.
+  Push user (3rd-party) rules to COS charms.
 
 containers:
   git-sync:
@@ -18,21 +19,27 @@ resources:
   git-sync-image:
     type: oci-image
     description: OCI image for git-sync
-    upstream-source: k8s.gcr.io/git-sync/git-sync:v3.3.4
+    upstream-source: k8s.gcr.io/git-sync/git-sync:v3.4.0
 
 storage:
   content-from-git:
     type: filesystem
     description: >
       Where to store the checked-out content from the git repo.
-    # TODO instead of specifying a location here, try use OF facility for obtaining path by name
-    location: /git
+    # Prometheus, loki and grafana libraries expect to find the alert rules in the charm container.
+    # If left unspecified, "content-from-git" would be mounted under
+    # "/juju/storage/content-from-git/0" in the charm container.
 
 provides:
   prometheus-config:
     interface: prometheus_scrape
+  grafana-dashboards:
+    interface: grafana_dashboard
 
-# no peer relations by design: only one unit per rules repo makes sense
+requires:
+  loki-config:
+    interface: loki_push_api
+
 peers:
   replicas:
-    interface: lma_rules_replica
+    interface: cos_configuration_replica

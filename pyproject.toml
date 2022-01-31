@@ -38,7 +38,7 @@ copyright-regexp = "Copyright\\s\\d{4}([-,]\\d{4})*\\s+%(author)s"
 [tool.mypy]
 pretty = true
 python_version = 3.8
-mypy_path = "$MYPY_CONFIG_FILE_DIR/src:$MYPY_CONFIG_FILE_DIR/lib:$MYPY_CONFIG_FILE_DIR/tests/unit"
+mypy_path = "$MYPY_CONFIG_FILE_DIR/src:$MYPY_CONFIG_FILE_DIR/lib"
 follow_imports = "silent"
 warn_redundant_casts = true
 warn_unused_ignores = true
@@ -47,12 +47,12 @@ show_traceback = true
 show_error_codes = true
 namespace_packages = true
 explicit_package_bases = true
-check_untyped_defs = false  # TODO revert to true once ops.framework.observer type hint fixed
+check_untyped_defs = true
 allow_redefinition = true
 
 # Ignore libraries that do not have type hint nor stubs
 [[tool.mypy.overrides]]
-module = ["ops.*", "kubernetes.*"]
+module = ["ops.*", "kubernetes.*", "pytest_operator.*", "urllib3.*", "prometheus_api_client", "requests"]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]

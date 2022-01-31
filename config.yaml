@@ -2,18 +2,31 @@
 # See LICENSE file for licensing details.
 
 options:
-  git-sync::repo:
+  git_repo:
     type: string
-    description: URL to repo to sync against
-  git-sync::branch:
+    description: URL to repo to clone and sync against.
+  git_branch:
     type: string
-    description: branch to sync
-    default: main
-  git-sync::wait:
+    description: The git branch to check out.
+    default: master
+  git_rev:
+    type: string
+    description: the git revision (tag or hash) to check out
+    default: HEAD
+  git_wait:
     type: int
-    description: git-sync wait interval between syncs (seconds).
+    description: The number of seconds between syncs.
+    # This default is different from git-sync's default (1s)
     default: 60
-  prometheus_relpath:
+  prometheus_alert_rules_path:
     type: string
-    description: relative path in repo to prometheus rules
-    default: ""
+    description: Relative path in repo to prometheus rules.
+    default: "prometheus_alert_rules"
+  loki_alert_rules_path:
+    type: string
+    description: Relative path in repo to loki rules.
+    default: "loki_alert_rules"
+  grafana_dashboards_path:
+    type: string
+    description: Relative path in repo to grafana dashboards.
+    default: "grafana_dashboards"
