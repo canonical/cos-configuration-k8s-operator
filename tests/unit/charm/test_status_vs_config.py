@@ -119,7 +119,7 @@ class TestRandomHooks(unittest.TestCase):
                 rel_id = self.harness.add_relation(rel_name, f"{self.app_name}-app")
                 units_to_add.extend(
                     [
-                        lambda rel_id=rel_id, rel_name=rel_name, num_units=num_units: self.harness.add_relation_unit(
+                        lambda rel_id=rel_id, rel_name=rel_name, num_units=num_units: self.harness.add_relation_unit(  # type: ignore
                             rel_id, f"{rel_name}/{num_units}"
                         )
                         for num_units in range(num_remote_units)
@@ -127,7 +127,7 @@ class TestRandomHooks(unittest.TestCase):
                 )
             units_to_add.extend(
                 [
-                    lambda i=i: self.harness.add_relation_unit(
+                    lambda i=i: self.harness.add_relation_unit(  # type: ignore
                         self.peer_rel_id, f"{self.app_name}/{i}"
                     )
                     for i in range(1, num_peers)

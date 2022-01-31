@@ -221,7 +221,7 @@ class COSConfigCharm(CharmBase):
             [(f"{self.app.name}-git-sync", self._git_sync_port, self._git_sync_port)],
         )
 
-    def _common_exit_hook(self) -> None:
+    def _common_exit_hook(self) -> None:  # noqa: C901
         """Event processing hook that is common to all events to ensure idempotency."""
         if not self.container.can_connect():
             self.unit.status = MaintenanceStatus("Waiting for pod startup to complete")
@@ -258,21 +258,8 @@ class COSConfigCharm(CharmBase):
         if not self.config.get("git_repo"):
             # Stop service and remove the repo folder
             # Ideally this would be done once, not _every_ time the hook is called, but no harm
-            try:
-                self.container.stop(self._service_name)
-            except:  # noqa E722
-                pass
-
-            # Remove the repo folder.
-            # This can be done using pebble:
-            #
-            #   _repo_path_sidecar = os.path.join(
-            #             self._git_sync_mount_point_sidecar, GitSyncLayer.SUBDIR
-            #         )
-            #   self.container.remove_path(_repo_path_sidecar, recursive=True)
-            #
-            # but to make unittest simpler, doing it from the charm container's mount point
-            shutil.rmtree(self._repo_path, ignore_errors=True)
+            self._stop_service()
+            self._remove_repo_folder()
 
             self._reinitialize()
             self.unit.status = BlockedStatus("Repo URL is not set; use `juju config`")
@@ -290,8 +277,11 @@ class COSConfigCharm(CharmBase):
             self.container.add_layer(self._layer_name, overlay, combine=True)
 
             try:
+                # The git-sync sidecar not always clears up on its own any old existing content
+                # self._restart_service()
+                self._stop_service()
+                self._remove_repo_folder()
                 self._restart_service()
-                # the git-sync sidecar clears up on its own any old existing content
             except (ChangeError, ServiceRestartError) as e:
                 self.unit.status = BlockedStatus(str(e))
                 return
@@ -306,6 +296,18 @@ class COSConfigCharm(CharmBase):
             if not isinstance(self.unit.status, ActiveStatus):
                 logger.info("CONFIGURED state reached")
             self.unit.status = ActiveStatus()
+
+    def _remove_repo_folder(self):
+        """Remove the repo folder."""
+        # This can be done using pebble:
+        #
+        #   _repo_path_sidecar = os.path.join(
+        #             self._git_sync_mount_point_sidecar, GitSyncLayer.SUBDIR
+        #         )
+        #   self.container.remove_path(_repo_path_sidecar, recursive=True)
+        #
+        # but to keep unittest simpler, doing it from the charm container's mount point
+        shutil.rmtree(self._repo_path, ignore_errors=True)
 
     def _layer(self) -> Layer:
         """Build overlay layer for the git-sync service."""
@@ -402,6 +404,13 @@ class COSConfigCharm(CharmBase):
     def _on_config_changed(self, _):
         """Event handler for ConfigChangedEvent."""
         self._common_exit_hook()
+
+    def _stop_service(self):
+        """Helper to stop the service, suppressing exceptions (in case it is not running)."""
+        try:
+            self.container.stop(self._service_name)
+        except:  # noqa E722
+            pass
 
     def _restart_service(self) -> None:
         """Helper function for restarting the underlying service."""

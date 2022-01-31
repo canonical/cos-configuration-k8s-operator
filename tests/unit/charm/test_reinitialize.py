@@ -183,3 +183,69 @@ class TestReinitializeCalledOnce(unittest.TestCase):
                 self.harness.remove_relation_unit(self.peer_rel_id, f"{self.app_name}/{i}")
             self.harness.update_config(unset=["git_repo", "git_branch"])
             self.sandbox.clear()
+
+
+class TestConfigChanged(unittest.TestCase):
+    """Feature: When repo, branch or rev config options change, relation data needs to be updated.
+
+    Background: Some config options are expected to change the contents of the repo folder on disk.
+    In this case, the charm have the changes reflected in relation data so they are communicated
+    over to the related apps.
+    """
+
+    def setUp(self) -> None:
+        self.app_name = "cos-configuration-k8s"
+
+    @patch("charm.KubernetesServicePatch", lambda x, y: None)
+    @given(st.tuples(st.sampled_from(["git_repo", "git_branch", "git_rev"]), st.text()))
+    def test_reinitialize_is_called_when_config_changes(self, config_option):
+        """Scenario: Unit is deployed with a certain config, and then config is changed."""
+        # mock charm container's mount
+        self.sandbox = TempFolderSandbox()
+        self.abs_repo_path = os.path.join(self.sandbox.root, "repo")
+        COSConfigCharm._repo_path = self.abs_repo_path
+
+        self.harness = Harness(COSConfigCharm)
+        self.peer_rel_id = self.harness.add_relation("replicas", self.app_name)
+
+        # paths relative to sandbox root
+        self.git_hash_file_path = os.path.relpath(
+            self.harness.charm._git_hash_file_path, self.sandbox.root
+        )
+
+        # without the try-finally, if any assertion fails, then hypothesis would reenter without
+        # the cleanup, carrying forward the units that were previously added
+        try:
+            # GIVEN the current unit is a leader unit
+            self.harness.set_leader(True)
+
+            self.harness.begin_with_initial_hooks()
+
+            # AND some initial config is provided
+            self.harness.update_config({"git_repo": "http://does.not.really.matter/repo.git"})
+            self.sandbox.put_file(self.git_hash_file_path, "hash 012345")
+
+            with patch.object(
+                GrafanaDashboardProvider, "_reinitialize_dashboard_data"
+            ) as graf_mock, patch.object(
+                LokiPushApiConsumer, "_reinitialize_alert_rules"
+            ) as loki_mock, patch.object(
+                PrometheusRulesProvider, "_reinitialize_alert_rules"
+            ) as prom_mock:
+                # WHEN config option is updated
+                self.harness.update_config({config_option[0]: config_option[1]})
+
+                # AND git-sync updates the repo
+                self.sandbox.put_file(self.git_hash_file_path, config_option[1])
+
+                # AND update-status fires
+                self.harness.charm.on.update_status.emit()
+
+                # THEN reinitialization occurred only once more since repo was unset
+                self.assertEqual(prom_mock.call_count, 1)
+                self.assertEqual(loki_mock.call_count, 1)
+                self.assertEqual(graf_mock.call_count, 1)
+
+        finally:
+            # cleanup added units to prep for reentry by hypothesis' strategy
+            self.harness.cleanup()
