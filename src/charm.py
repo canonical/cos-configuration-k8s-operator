@@ -236,7 +236,6 @@ class COSConfigCharm(CharmBase):
         # Check if stored hash was initialized (it can only be None when a new deployment starts,
         # at which point no services should be running).
         if not self._stored_hash:
-            logger.warning("HASH UNINITIALIZED")
             if not self.unit.is_leader():
                 # Relation app data is uninitialized and this is not a leader unit.
                 # Abort; startup sequence will resume when leader updates relation data and
@@ -370,13 +369,12 @@ class COSConfigCharm(CharmBase):
 
         hash_changed = True
         current_hash = self._get_current_hash()
-        logger.info("Current: %s, stored: %s", current_hash, self._stored_hash)
         if not self._stored_hash:
             self._stored_hash = current_hash
             logger.info("IDLE state reached")
         elif current_hash != self._stored_hash:
             logger.info(
-                "Updating hash: git-sync hash changed from %s (%s) to %s (%s)",
+                "Updating stored hash: git-sync hash changed from %s (%s) to %s (%s)",
                 self._stored_hash,
                 type(self._stored_hash),
                 current_hash,
@@ -394,7 +392,6 @@ class COSConfigCharm(CharmBase):
             return
 
         if self._update_hash():
-            logger.warning("CALLING INDIVIDUAL REINITs")
             self.prom_rules_provider._reinitialize_alert_rules()
             self.loki_rules_provider._reinitialize_alert_rules()
             self.grafana_dashboards_provider._reinitialize_dashboard_data()

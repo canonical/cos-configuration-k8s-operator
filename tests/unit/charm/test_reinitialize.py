@@ -256,7 +256,6 @@ class TestConfigChanged(unittest.TestCase):
             ) as loki_mock, patch.object(
                 PrometheusRulesProvider, "_reinitialize_alert_rules"
             ) as prom_mock:
-                logger.info("INSIDE CTXMGR")
                 # WHEN config option is updated
                 self.harness.update_config({config_option[0]: config_option[1]})
 
