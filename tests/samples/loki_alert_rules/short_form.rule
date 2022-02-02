@@ -1,0 +1,3 @@
+alert: HighThroughputLogStreams
+expr: absent_over_time({namespace="dev",job=~".*-logs"}[2m])
+for: 2m

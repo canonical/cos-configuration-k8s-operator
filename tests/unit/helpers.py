@@ -18,7 +18,7 @@ class TempFolderSandbox:
 
     def __del__(self):
         """Delete the sandbox."""
-        # shutil.rmtree(self.root, ignore_errors=True)
+        shutil.rmtree(self.root, ignore_errors=True)
 
     def _validated_path(self, rel_path) -> str:
         """Make sure this is a path within the root temp dir."""

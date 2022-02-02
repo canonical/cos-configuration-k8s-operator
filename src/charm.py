@@ -221,7 +221,7 @@ class COSConfigCharm(CharmBase):
             [(f"{self.app.name}-git-sync", self._git_sync_port, self._git_sync_port)],
         )
 
-    def _common_exit_hook(self) -> None:
+    def _common_exit_hook(self) -> None:  # noqa: C901
         """Event processing hook that is common to all events to ensure idempotency."""
         if not self.container.can_connect():
             self.unit.status = MaintenanceStatus("Waiting for pod startup to complete")
@@ -233,22 +233,18 @@ class COSConfigCharm(CharmBase):
             self.unit.status = MaintenanceStatus("Waiting for peer relation to be created")
             return
 
-        # Use the contents of the hash file as an indication for a change in the repo.
-        # If the git hash is not yet in peer relation data, add it now; otherwise it is managed by
-        # self._reinitialize()
-        # When the charm is first deployed, relation data is empty. Need to change it to the
-        # placeholder value (indicating there is no hash file present yet, or to the contents of
-        # the hash file if it is present.
+        # Check if stored hash was initialized (it can only be None when a new deployment starts,
+        # at which point no services should be running).
         if not self._stored_hash:
-            if self.unit.is_leader():
-                self._stored_hash = self._get_current_hash()
-                logger.info("IDLE state reached")
-            else:
+            if not self.unit.is_leader():
                 # Relation app data is uninitialized and this is not a leader unit.
                 # Abort; startup sequence will resume when leader updates relation data and
                 # relation-changed fires.
                 self.unit.status = BlockedStatus("Waiting for leader unit to initialize the hash")
                 return
+
+            # Cleanup
+            self._update_relation_data()
 
         # The only mandatory config option is the `git_repo` option. If it is unset, the repo
         # folder and hash should reset and the service stopped.
@@ -258,23 +254,10 @@ class COSConfigCharm(CharmBase):
         if not self.config.get("git_repo"):
             # Stop service and remove the repo folder
             # Ideally this would be done once, not _every_ time the hook is called, but no harm
-            try:
-                self.container.stop(self._service_name)
-            except:  # noqa E722
-                pass
+            self._stop_service()
+            self._remove_repo_folder()
 
-            # Remove the repo folder.
-            # This can be done using pebble:
-            #
-            #   _repo_path_sidecar = os.path.join(
-            #             self._git_sync_mount_point_sidecar, GitSyncLayer.SUBDIR
-            #         )
-            #   self.container.remove_path(_repo_path_sidecar, recursive=True)
-            #
-            # but to make unittest simpler, doing it from the charm container's mount point
-            shutil.rmtree(self._repo_path, ignore_errors=True)
-
-            self._reinitialize()
+            self._update_relation_data()
             self.unit.status = BlockedStatus("Repo URL is not set; use `juju config`")
             return
 
@@ -287,18 +270,19 @@ class COSConfigCharm(CharmBase):
             or overlay.services != plan.services
             or not self.container.get_service(self._service_name).is_running()
         ):
-            self.container.add_layer(self._layer_name, overlay, combine=True)
-
             try:
+                # The git-sync sidecar not always clears up on its own any old existing content
+                # self._restart_service()
+                self._stop_service()
+                self._remove_repo_folder()
+                self.container.add_layer(self._layer_name, overlay, combine=True)
                 self._restart_service()
-                # the git-sync sidecar clears up on its own any old existing content
             except (ChangeError, ServiceRestartError) as e:
                 self.unit.status = BlockedStatus(str(e))
                 return
 
-        # reload rules when config changes (e.g. branch name), when git-sync is up after the
-        # charm, etc.
-        self._reinitialize()
+        # Need to call this again in case files showed up on disk after the last hook fired.
+        self._update_relation_data()
 
         if self._stored_hash in [self._hash_placeholder, None]:
             self.unit.status = BlockedStatus("No hash file yet - wait for update-status")
@@ -306,6 +290,18 @@ class COSConfigCharm(CharmBase):
             if not isinstance(self.unit.status, ActiveStatus):
                 logger.info("CONFIGURED state reached")
             self.unit.status = ActiveStatus()
+
+    def _remove_repo_folder(self):
+        """Remove the repo folder."""
+        # This can be done using pebble:
+        #
+        #   _repo_path_sidecar = os.path.join(
+        #             self._git_sync_mount_point_sidecar, GitSyncLayer.SUBDIR
+        #         )
+        #   self.container.remove_path(_repo_path_sidecar, recursive=True)
+        #
+        # but to keep unittest simpler, doing it from the charm container's mount point
+        shutil.rmtree(self._repo_path, ignore_errors=True)
 
     def _layer(self) -> Layer:
         """Build overlay layer for the git-sync service."""
@@ -362,18 +358,40 @@ class COSConfigCharm(CharmBase):
             )
             relation.data[self.app]["hash"] = sha
 
-    def _reinitialize(self):
-        """Reinitialize relation data, if the underlying data changed."""
-        # Use the contents of the hash file as an indication for a change
-        if (sha := self._get_current_hash()) != self._stored_hash:
+    def _update_hash(self) -> bool:
+        # Use the contents of the hash file as an indication for a change in the repo.
+        # If the git hash is not yet in peer relation data, add it now.
+        # When the charm is first deployed, relation data is empty. Need to change it to the
+        # placeholder value, indicating there is no hash file present yet, or to the contents of
+        # the hash file if it is present.
+        if not self.unit.is_leader():
+            return False
+
+        hash_changed = True
+        current_hash = self._get_current_hash()
+        if not self._stored_hash:
+            self._stored_hash = current_hash
+            logger.info("IDLE state reached")
+        elif current_hash != self._stored_hash:
             logger.info(
-                "Re-initializing relation data: git-sync hash changed from %s (%s) to %s (%s)",
+                "Updating stored hash: git-sync hash changed from %s (%s) to %s (%s)",
                 self._stored_hash,
                 type(self._stored_hash),
-                sha,
-                type(sha),
+                current_hash,
+                type(current_hash),
             )
-            self._stored_hash = sha
+            self._stored_hash = current_hash
+        else:
+            hash_changed = False
+
+        return hash_changed
+
+    def _update_relation_data(self):
+        """Reinitialize relation data, if the underlying data changed."""
+        if not self.unit.is_leader():
+            return
+
+        if self._update_hash():
             self.prom_rules_provider._reinitialize_alert_rules()
             self.loki_rules_provider._reinitialize_alert_rules()
             self.grafana_dashboards_provider._reinitialize_dashboard_data()
@@ -402,6 +420,13 @@ class COSConfigCharm(CharmBase):
     def _on_config_changed(self, _):
         """Event handler for ConfigChangedEvent."""
         self._common_exit_hook()
+
+    def _stop_service(self):
+        """Helper to stop the service, suppressing exceptions (in case it is not running)."""
+        try:
+            self.container.stop(self._service_name)
+        except:  # noqa E722
+            pass
 
     def _restart_service(self) -> None:
         """Helper function for restarting the underlying service."""

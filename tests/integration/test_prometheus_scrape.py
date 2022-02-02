@@ -53,9 +53,9 @@ async def test_rule_files_ingested_by_prometheus(ops_test):
     # update config and wait for all apps to settle
     await ops_test.model.applications[app_name].set_config(
         {
-            "git_repo": "https://github.com/canonical/prometheus-operator.git",
-            "git_branch": "main",
-            "prometheus_alert_rules_path": "tests/unit/prometheus_alert_rules",
+            "git_repo": "https://github.com/canonical/cos-configuration-k8s-operator.git",
+            "git_branch": "feature/fix_config_changed",
+            "prometheus_alert_rules_path": "tests/samples/prometheus_alert_rules",
         }
     )
 
