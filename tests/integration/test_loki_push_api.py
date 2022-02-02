@@ -53,16 +53,14 @@ async def test_rule_files_ingested_by_loki(ops_test):
     await ops_test.model.applications[app_name].set_config(
         {
             # TODO confirm loki able to ingest folders with both alert and recording rules
-            # "git_repo": "https://github.com/canonical/loki-operator.git",
-            "git_repo": "https://github.com/canonical/prometheus-operator.git",
-            "git_branch": "main",
-            # "loki_alert_rules_path": "tests/sample_rule_files/with_topology",
-            "loki_alert_rules_path": "tests/unit/prometheus_alert_rules",
+            "git_repo": "https://github.com/canonical/cos-configuration-k8s-operator.git",
+            "git_branch": "feature/fix_config_changed",
+            "loki_alert_rules_path": "tests/unit/loki_alert_rules",
         }
     )
 
-    # now loki should go back to active, but cos-config might still blocked if files showed up on
-    # disk after the last hook fired
+    # now loki should go back to active, but cos-config might still be blocked if files showed up
+    # on disk after the last hook fired
     await ops_test.model.wait_for_idle(apps=["loki"], status="active", timeout=1000)
 
     # in case the files show up on disk after the last hook fired, have an update_status fire now
@@ -75,7 +73,7 @@ async def test_rule_files_ingested_by_loki(ops_test):
 
     # now, make sure rules are present
     response = await client.rules()
-    assert type(response) is dict
+    assert (await client.rules()) > {}
     alert_group = next(iter(response.values()))[0]
     assert "name" in alert_group
     assert "rules" in alert_group
