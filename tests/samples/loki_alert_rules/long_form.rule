@@ -1,21 +1,11 @@
 groups:
-  - name: group1
-    rules:
-    - alert: CPUOverUse1
-      expr: process_cpu_seconds_total > 0.11
-      for: 0m
-      labels:
-        severity: Low
-      annotations:
-        summary: "Instance {{ $labels.instance }} CPU over use"
-        description: "{{ $labels.instance }} of job {{ $labels.job }} has used too much CPU."
-  - name: group2
-    rules:
-    - alert: CPUOverUse2
-      expr: process_cpu_seconds_total > 0.22
-      for: 0m
-      labels:
-        severity: Low
-      annotations:
-        summary: "Instance {{ $labels.instance }} CPU over use"
-        description: "{{ $labels.instance }} of job {{ $labels.job }} has used too much CPU."
+ - name: example1
+   rules:
+     - alert: HighThroughputLogStreams
+       expr: absent_over_time({namespace="dev",job=~".*-logs"}[2m])
+       for: 2m
+ - name: example2
+   rules:
+     - alert: HighThroughputLogStreams
+       expr: absent_over_time({namespace="dev",job=~".*-logs"}[2m])
+       for: 2m
