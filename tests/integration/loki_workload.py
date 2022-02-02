@@ -88,7 +88,7 @@ class LokiServer:
         Returns:
           Rule Groups list or empty list
         """
-        url = f"{self.base_url}/api/v1/rules{'/' + namespace if namespace else ''}"
+        url = f"{self.base_url}/loki/api/v1/rules{'/' + namespace if namespace else ''}"
         async with aiohttp.ClientSession() as session:
             async with session.get(url) as response:
                 result = await response.text()
