@@ -59,9 +59,9 @@ async def test_rule_files_ingested_by_grafana(ops_test):
     # update config and wait for all apps to settle
     await ops_test.model.applications[app_name].set_config(
         {
-            "git_repo": "https://github.com/canonical/grafana-k8s-operator.git",
-            "git_branch": "main",
-            "grafana_dashboards_path": "tests/integration/grafana-tester/src/grafana_dashboards/",
+            "git_repo": "https://github.com/canonical/cos-configuration-k8s-operator.git",
+            "git_branch": "feature/fix_config_changed",
+            "grafana_dashboards_path": "tests/samples/grafana_dashboards",
         }
     )
 
