@@ -46,9 +46,10 @@ async def test_relating_to_grafana(ops_test):
 async def test_rule_files_ingested_by_grafana(ops_test):
     action = await ops_test.model.applications["grafana"].units[0].run_action("get-admin-password")
     await action.wait()
-    admin_output = ops_test.model.get_action_output(action.id)
-    logger.info("action output: %s", admin_output)
-    admin_password = yaml.safe_load(admin_output)["admin-password"]
+    admin_output = await ops_test.model.get_action_output(action.id)
+    # Output looks like this:
+    # {'Code': '0', 'admin-pasword': 'HP0IOA0tKte5'}
+    admin_password = admin_output["admin-password"]
 
     unit_ip = await get_unit_address(ops_test, "grafana", 0)
     client = Grafana(host=unit_ip, pw=admin_password)
