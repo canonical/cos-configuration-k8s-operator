@@ -55,7 +55,7 @@ async def test_rule_files_ingested_by_loki(ops_test):
             # TODO confirm loki able to ingest folders with both alert and recording rules
             "git_repo": "https://github.com/canonical/cos-configuration-k8s-operator.git",
             "git_branch": "feature/fix_config_changed",
-            "loki_alert_rules_path": "tests/unit/loki_alert_rules",
+            "loki_alert_rules_path": "tests/samples/loki_alert_rules",
         }
     )
 
@@ -73,7 +73,7 @@ async def test_rule_files_ingested_by_loki(ops_test):
 
     # now, make sure rules are present
     response = await client.rules()
-    assert (await client.rules()) > {}
+    assert (await client.rules()).items() > {}.items()
     alert_group = next(iter(response.values()))[0]
     assert "name" in alert_group
     assert "rules" in alert_group

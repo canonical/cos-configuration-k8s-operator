@@ -97,7 +97,10 @@ class LokiServer:
                 try:
                     # error message could have a colon or not, raising ScannerError or ValueError,
                     # respectively
-                    return yaml.safe_load(result)
+                    # error message from the loki server can be:
+                    #   - '404 page not found'
+                    as_yaml = yaml.safe_load(result)
+                    return as_yaml if type(as_yaml) is dict else {}
                 except (ScannerError, ValueError):
                     return {}
 
