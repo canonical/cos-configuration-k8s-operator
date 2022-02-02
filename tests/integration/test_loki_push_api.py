@@ -54,7 +54,7 @@ async def test_rule_files_ingested_by_loki(ops_test):
         {
             # TODO confirm loki able to ingest folders with both alert and recording rules
             "git_repo": "https://github.com/canonical/cos-configuration-k8s-operator.git",
-            "git_branch": "feature/fix_config_changed",
+            "git_branch": "main",
             "loki_alert_rules_path": "tests/samples/loki_alert_rules",
         }
     )

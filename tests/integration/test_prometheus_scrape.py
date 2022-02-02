@@ -54,7 +54,7 @@ async def test_rule_files_ingested_by_prometheus(ops_test):
     await ops_test.model.applications[app_name].set_config(
         {
             "git_repo": "https://github.com/canonical/cos-configuration-k8s-operator.git",
-            "git_branch": "feature/fix_config_changed",
+            "git_branch": "main",
             "prometheus_alert_rules_path": "tests/samples/prometheus_alert_rules",
         }
     )
