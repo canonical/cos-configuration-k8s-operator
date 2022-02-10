@@ -230,7 +230,7 @@ class COSConfigCharm(CharmBase):
             for line in warnings.splitlines():
                 event.log(f"Warning: {line.strip()}")
 
-        event.set_results({"stdout": stdout})
+        event.set_results({"git-sync-stdout": stdout})
 
         # Do the same thing _update_status() is doing to make sure relation data is up-to-date
         self._common_exit_hook()
