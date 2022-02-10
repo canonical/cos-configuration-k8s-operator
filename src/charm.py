@@ -8,17 +8,16 @@ import hashlib
 import logging
 import os
 import shutil
-from abc import ABC, abstractmethod
-from typing import Final, Optional, cast
+from typing import Final, List, Optional, cast
 
 from charms.grafana_k8s.v0.grafana_dashboard import GrafanaDashboardProvider
 from charms.loki_k8s.v0.loki_push_api import LokiPushApiConsumer
 from charms.observability_libs.v0.kubernetes_service_patch import KubernetesServicePatch
 from charms.prometheus_k8s.v0.prometheus_scrape import PrometheusRulesProvider
-from ops.charm import CharmBase
+from ops.charm import ActionEvent, CharmBase
 from ops.main import main
 from ops.model import ActiveStatus, BlockedStatus, MaintenanceStatus
-from ops.pebble import ChangeError, Layer
+from ops.pebble import APIError, ChangeError, ExecError, Layer
 
 logger = logging.getLogger(__name__)
 
@@ -28,104 +27,6 @@ def sha256(hashable) -> str:
     if isinstance(hashable, str):
         hashable = hashable.encode("utf-8")
     return hashlib.sha256(hashable).hexdigest()
-
-
-class LayerBuilder(ABC):
-    """Base helper class for building OF layers."""
-
-    def __init__(self, name: str):
-        self.name = name
-
-    @abstractmethod
-    def _command(self) -> str:
-        ...
-
-    def build(self, override: str = "replace", startup: str = "enabled") -> Layer:
-        """Builds the layer!"""
-        return Layer(
-            {
-                "summary": f"{self.name} layer",
-                "description": f"pebble config layer for {self.name}",
-                "services": {
-                    self.name: {
-                        "override": override,
-                        "summary": f"{self.name} service",
-                        "startup": startup,
-                        "command": self._command(),
-                    },
-                },
-            }
-        )
-
-
-class LayerConfigError(ValueError):
-    """Custom exception for invalid layer configurations."""
-
-
-class GitSyncLayer(LayerBuilder):
-    """Helper class for building a git-sync layer.
-
-    This layer is used for launching a git-sync (https://github.com/kubernetes/git-sync) container
-    with custom arguments.
-
-    Raises:
-        LayerConfigError, if the config is invalid.
-    """
-
-    # Directory name under `-root` (passed to `-dest`) into where the repo will be cloned.
-    # Having this option is useful in lieu of a git "overwrite all" flag: any changes will
-    # overwrite any existing files.
-    # Since this is an implementation detail, it is captured here as a class variable.
-    SUBDIR: Final = "repo"
-
-    def __init__(
-        self,
-        service_name: str,
-        *,
-        repo: str,
-        branch: str,
-        rev: str,
-        wait: int,
-        root: str,
-        port: int,
-    ):
-        super().__init__(service_name)
-        if not repo:
-            raise LayerConfigError("git-sync config error: invalid repo")
-
-        self.repo = repo
-        self.branch = branch
-        self.rev = rev
-        self.wait = wait
-        self.root = root
-        self.port = port
-
-    def _command(self) -> str:
-        args = ["/git-sync", f"--repo {self.repo}"]
-        if self.branch:
-            args.append(f"--branch {self.branch}")
-        if self.rev:
-            args.append(f"--rev {self.rev}")
-        args.extend(
-            [
-                "--depth 1",
-                f"--root {self.root}",
-                f"--dest {self.SUBDIR}",  # so charm code doesn't need to delete
-            ]
-        )
-
-        if str(self.wait):  # converting to str so that 0 evaluates as True
-            args.append(f"--wait {self.wait}")
-        args.extend(
-            [
-                f"--http-bind :{self.port}",
-                "--http-metrics true",
-            ]
-        )
-
-        cmd = " ".join(args)
-        logger.debug("command: %s", cmd)
-        return cmd
 
 
 class ServiceRestartError(RuntimeError):
@@ -141,9 +42,15 @@ class COSConfigCharm(CharmBase):
     _peer_relation_name = "replicas"  # must match metadata.yaml peer role name
     _git_sync_port = 9000  # port number for git-sync's HTTP endpoint
 
+    # Directory name under `-root` (passed to `-dest`) into where the repo will be cloned.
+    # Having this option is useful in lieu of a git "overwrite all" flag: any changes will
+    # overwrite any existing files.
+    # Since this is an implementation detail, it is captured here as a class variable.
+    SUBDIR: Final = "repo"
+
     # path to the repo in the _charm_ container
     _git_sync_mount_point = "/var/lib/juju/storage/content-from-git/0"
-    _repo_path = os.path.join(_git_sync_mount_point, GitSyncLayer.SUBDIR)
+    _repo_path = os.path.join(_git_sync_mount_point, SUBDIR)
 
     prometheus_relation_name = "prometheus-config"
     loki_relation_name = "loki-config"
@@ -179,6 +86,9 @@ class COSConfigCharm(CharmBase):
             self.on[self.grafana_relation_name].relation_joined,
         ]:
             self.framework.observe(e, self._on_relation_joined)
+
+        # Action events
+        self.framework.observe(self.on.sync_now_action, self._on_sync_now_action)
 
         # logger.info("repo location: [%s]", self.meta.storages["content-from-git"].location)
 
@@ -291,6 +201,40 @@ class COSConfigCharm(CharmBase):
                 logger.info("CONFIGURED state reached")
             self.unit.status = ActiveStatus()
 
+    def _on_sync_now_action(self, event: ActionEvent):
+        """Hook for the sync-now action."""
+        if not self.container.can_connect():
+            event.fail("Container not ready")
+            return
+
+        event.log("Calling git-sync with --one-time...")
+
+        try:
+            process = self.container.exec(self._command(one_time=True))
+        except APIError as e:
+            event.fail(str(e))
+            return
+
+        try:
+            stdout, warnings = process.wait_output()
+        except ExecError as e:
+            for line in e.stderr.splitlines():
+                event.log(line)
+            event.fail("Exited with code {e.exit_code}.")
+            return
+        except ChangeError as e:
+            event.fail(str(e))
+            return
+
+        if warnings:
+            for line in warnings.splitlines():
+                event.log(f"Warning: {line.strip()}")
+
+        event.set_results({"stdout": stdout})
+
+        # Do the same thing _update_status() is doing to make sure relation data is up-to-date
+        self._common_exit_hook()
+
     def _remove_repo_folder(self):
         """Remove the repo folder."""
         # This can be done using pebble:
@@ -303,19 +247,71 @@ class COSConfigCharm(CharmBase):
         # but to keep unittest simpler, doing it from the charm container's mount point
         shutil.rmtree(self._repo_path, ignore_errors=True)
 
-    def _layer(self) -> Layer:
-        """Build overlay layer for the git-sync service."""
-        overlay = GitSyncLayer(
-            service_name=self._service_name,
-            repo=cast(str, self.config.get("git_repo")),
-            rev=cast(str, self.config.get("git_rev")),
-            branch=cast(str, self.config.get("git_branch")),
-            wait=cast(int, self.config.get("git_wait")),
-            root=self._git_sync_mount_point_sidecar,
-            port=self._git_sync_port,
-        ).build(startup="disabled")
+    def _command(self, one_time=False) -> List[str]:
+        """Construct the command line for running git-sync.
 
-        return overlay
+        Args:
+            one_time: flag for adding the `--one-time` argument to have git-sync exit after the
+            first sync.
+        """
+        repo = cast(str, self.config.get("git_repo"))
+        branch = cast(str, self.config.get("git_branch"))
+        rev = cast(str, self.config.get("git_rev"))
+        wait = str(self.config.get("git_wait"))  # converting to str so that 0 evaluates as True
+
+        cmd = ["/git-sync"]
+        cmd.extend(["--repo", repo])
+        if branch:
+            cmd.extend(["--branch", branch])
+        if rev:
+            cmd.extend(["--rev", rev])
+        cmd.extend(
+            [
+                "--depth",
+                "1",
+                "--root",
+                self._git_sync_mount_point_sidecar,
+                "--dest",
+                self.SUBDIR,  # so charm code doesn't need to delete
+            ]
+        )
+
+        if one_time:
+            cmd.append("--one-time")
+        else:
+            if wait:
+                cmd.extend(["--wait", wait])
+            cmd.extend(
+                [
+                    "--http-bind",
+                    f":{self._git_sync_port}",
+                    "--http-metrics",
+                    "true",
+                ]
+            )
+
+        return cmd
+
+    def _layer(self) -> Layer:
+        """Build overlay layer for the git-sync service.
+
+        This layer is used for launching a git-sync (https://github.com/kubernetes/git-sync)
+        container with custom arguments.
+        """
+        return Layer(
+            {
+                "summary": f"{self._service_name} layer",
+                "description": f"pebble config layer for {self._service_name}",
+                "services": {
+                    self._service_name: {
+                        "override": "replace",
+                        "summary": f"{self._service_name} service",
+                        "startup": "disabled",
+                        "command": " ".join(self._command()),
+                    },
+                },
+            }
+        )
 
     def _on_relation_joined(self, _):
         """Event handler for the relation joined event of prometheus, loki or grafana."""
