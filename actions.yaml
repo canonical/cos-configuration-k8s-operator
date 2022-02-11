@@ -1,0 +1,7 @@
+# Copyright 2021 Canonical Ltd.
+# See LICENSE file for licensing details.
+
+sync-now:
+  description: |
+    Sync relation data with files on disk. This action can be used to force an update instead of
+    waiting for git-sync wait-time to elapse and udpate-status hook to fire.
