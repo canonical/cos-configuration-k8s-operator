@@ -210,7 +210,7 @@ class COSConfigCharm(CharmBase):
         event.log("Calling git-sync with --one-time...")
 
         try:
-            process = self.container.exec(self._command(one_time=True))
+            process = self.container.exec(self._git_sync_command_line(one_time=True))
         except APIError as e:
             event.fail(str(e))
             return
@@ -247,7 +247,7 @@ class COSConfigCharm(CharmBase):
         # but to keep unittest simpler, doing it from the charm container's mount point
         shutil.rmtree(self._repo_path, ignore_errors=True)
 
-    def _command(self, one_time=False) -> List[str]:
+    def _git_sync_command_line(self, one_time=False) -> List[str]:
         """Construct the command line for running git-sync.
 
         Args:
@@ -307,7 +307,7 @@ class COSConfigCharm(CharmBase):
                         "override": "replace",
                         "summary": f"{self._service_name} service",
                         "startup": "disabled",
-                        "command": " ".join(self._command()),
+                        "command": " ".join(self._git_sync_command_line()),
                     },
                 },
             }
