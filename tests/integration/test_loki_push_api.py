@@ -72,8 +72,8 @@ async def test_rule_files_ingested_by_loki(ops_test):
     await ops_test.model.wait_for_idle(status="active", timeout=1000)
 
     # now, make sure rules are present
+    expected = {"HighThroughputLogStreams", "HighPercentageError", "http-credentials-leaked"}
     response = await client.rules()
     assert (await client.rules()).items() > {}.items()
-    alert_group = next(iter(response.values()))[0]
-    assert "name" in alert_group
-    assert "rules" in alert_group
+    alerts = [group["rules"][0]["alert"] for group in next(iter(response.values()))]
+    assert set(alerts) == expected
