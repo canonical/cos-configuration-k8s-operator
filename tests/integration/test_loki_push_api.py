@@ -72,6 +72,8 @@ async def test_rule_files_ingested_by_loki(ops_test):
     await ops_test.model.wait_for_idle(status="active", timeout=1000)
 
     # now, make sure rules are present
+    # in the samples dir, the same alert name "HighThroughputLogStreams" appears
+    # under different files/groups three times and is therefore accounted here three times
     expected = [
         ["HighPercentageError"],
         ["HighThroughputLogStreams"],
