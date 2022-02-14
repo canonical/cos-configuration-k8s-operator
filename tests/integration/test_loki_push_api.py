@@ -72,8 +72,17 @@ async def test_rule_files_ingested_by_loki(ops_test):
     await ops_test.model.wait_for_idle(status="active", timeout=1000)
 
     # now, make sure rules are present
-    expected = {"HighThroughputLogStreams", "HighPercentageError", "http-credentials-leaked"}
+    expected = [
+        ["HighPercentageError"],
+        ["HighThroughputLogStreams"],
+        ["HighThroughputLogStreams"],
+        ["HighThroughputLogStreams"],
+        ["http-credentials-leaked"],
+    ]
     response = await client.rules()
     assert (await client.rules()).items() > {}.items()
-    alerts = [group["rules"][0]["alert"] for group in next(iter(response.values()))]
-    assert set(alerts) == expected
+    alerts = [
+        sorted([rule["alert"] for rule in group["rules"]])
+        for group in next(iter(response.values()))
+    ]
+    assert sorted(alerts) == expected
