@@ -210,9 +210,6 @@ class TestConfigChanged(unittest.TestCase):
     over to the related apps.
     """
 
-    def setUp(self) -> None:
-        self.app_name = "cos-configuration-k8s"
-
     @patch("charm.KubernetesServicePatch", lambda x, y: None)
     @given(
         st.tuples(
@@ -228,7 +225,7 @@ class TestConfigChanged(unittest.TestCase):
         COSConfigCharm._repo_path = self.abs_repo_path
 
         self.harness = Harness(COSConfigCharm)
-        self.peer_rel_id = self.harness.add_relation("replicas", self.app_name)
+        self.peer_rel_id = self.harness.add_relation("replicas", self.harness.model.app.name)
 
         # without the try-finally, if any assertion fails, then hypothesis would reenter without
         # the cleanup, carrying forward the units that were previously added

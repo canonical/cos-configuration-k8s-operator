@@ -27,9 +27,6 @@ class TestBlockedStatus(unittest.TestCase):
     As long as it is missing, the charm should be "Blocked".
     """
 
-    def setUp(self) -> None:
-        self.app_name = "cos-configuration-k8s"
-
     @patch("charm.KubernetesServicePatch", lambda x, y: None)
     @given(st.booleans(), st.integers(1, 5))
     def test_unit_is_blocked_if_no_config_provided(self, is_leader, num_units):
@@ -37,14 +34,16 @@ class TestBlockedStatus(unittest.TestCase):
         # without the try-finally, if any assertion fails, then hypothesis would reenter without
         # the cleanup, carrying forward the units that were previously added
         self.harness = Harness(COSConfigCharm)
-        self.peer_rel_id = self.harness.add_relation("replicas", self.app_name)
+        self.peer_rel_id = self.harness.add_relation("replicas", self.harness.model.app.name)
 
         try:
             self.assertEqual(self.harness.model.app.planned_units(), 1)
 
             # GIVEN any number of units present
             for i in range(1, num_units):
-                self.harness.add_relation_unit(self.peer_rel_id, f"{self.app_name}/{i}")
+                self.harness.add_relation_unit(
+                    self.peer_rel_id, f"{self.harness.model.app.name}/{i}"
+                )
 
             # AND the current unit could be either a leader or not
             self.harness.set_leader(is_leader)
@@ -71,9 +70,6 @@ class TestRandomHooks(unittest.TestCase):
     Background: For the git-sync sidecar to run, a mandatory config option is needed: repo's URL.
     As long as it is missing, the charm should be "Blocked".
     """
-
-    def setUp(self) -> None:
-        self.app_name = "cos-configuration-k8s"
 
     @patch("charm.KubernetesServicePatch", lambda x, y: None)
     @given(
@@ -102,7 +98,7 @@ class TestRandomHooks(unittest.TestCase):
         # without the try-finally, if any assertion fails, then hypothesis would reenter without
         # the cleanup, carrying forward the units that were previously added, etc.
         self.harness = Harness(COSConfigCharm)
-        self.peer_rel_id = self.harness.add_relation("replicas", self.app_name)
+        self.peer_rel_id = self.harness.add_relation("replicas", self.harness.model.app.name)
 
         # GIVEN app starts with a single unit (which is the leader)
         self.harness.set_leader(True)
@@ -116,7 +112,7 @@ class TestRandomHooks(unittest.TestCase):
             # WHEN later on the user adds relations and more units
             units_to_add = [lambda: self.harness.set_leader(is_leader)]
             for rel_name, num_remote_units in rel_list:
-                rel_id = self.harness.add_relation(rel_name, f"{self.app_name}-app")
+                rel_id = self.harness.add_relation(rel_name, f"{self.harness.model.app.name}-app")
                 units_to_add.extend(
                     [
                         lambda rel_id=rel_id, rel_name=rel_name, num_units=num_units: self.harness.add_relation_unit(  # type: ignore
@@ -128,7 +124,7 @@ class TestRandomHooks(unittest.TestCase):
             units_to_add.extend(
                 [
                     lambda i=i: self.harness.add_relation_unit(  # type: ignore
-                        self.peer_rel_id, f"{self.app_name}/{i}"
+                        self.peer_rel_id, f"{self.harness.model.app.name}/{i}"
                     )
                     for i in range(1, num_peers)
                 ]
@@ -166,8 +162,7 @@ class TestStatusVsConfig(unittest.TestCase):
         self.harness = Harness(COSConfigCharm)
         self.addCleanup(self.harness.cleanup)
 
-        self.app_name = "cos-configuration-k8s"
-        self.peer_rel_id = self.harness.add_relation("replicas", self.app_name)
+        self.peer_rel_id = self.harness.add_relation("replicas", self.harness.model.app.name)
         self.harness.begin_with_initial_hooks()
 
         self.container_name = self.harness.charm._container_name
@@ -187,7 +182,9 @@ class TestStatusVsConfig(unittest.TestCase):
 
             # GIVEN any number of units present
             for i in range(1, num_units):
-                self.harness.add_relation_unit(self.peer_rel_id, f"{self.app_name}/{i}")
+                self.harness.add_relation_unit(
+                    self.peer_rel_id, f"{self.harness.model.app.name}/{i}"
+                )
 
             # AND the current unit could be either a leader or not
             self.harness.set_leader(is_leader)
@@ -213,7 +210,9 @@ class TestStatusVsConfig(unittest.TestCase):
             # cleanup added units to prep for reentry by hypothesis' strategy
             self.harness.set_leader(False)
             for i in reversed(range(1, num_units)):
-                self.harness.remove_relation_unit(self.peer_rel_id, f"{self.app_name}/{i}")
+                self.harness.remove_relation_unit(
+                    self.peer_rel_id, f"{self.harness.model.app.name}/{i}"
+                )
             self.harness.update_config(unset=["git_repo"])
 
     @given(st.integers(1, 5))
