@@ -172,6 +172,7 @@ class TestStatusVsConfig(unittest.TestCase):
             self.harness.charm._git_hash_file_path, self.sandbox.root
         )
 
+    @patch("charm.COSConfigCharm._exec_sync_repo", lambda *a, **kw: "", "")
     @given(st.booleans(), st.integers(1, 5))
     def test_unit_is_blocked_if_repo_url_provided_but_hash_missing(self, is_leader, num_units):
         """Scenario: Unit is deployed, the repo url config is set after, but hash file missing."""
@@ -194,16 +195,7 @@ class TestStatusVsConfig(unittest.TestCase):
 
             # AND hash file missing
 
-            # THEN pebble plan contains the service AND service is running (only if a leader unit)
-            if is_leader:
-                plan = self.harness.get_container_pebble_plan(self.container_name)
-                self.assertIn(self.harness.charm._service_name, plan.services)
-                services = self.harness.model.unit.get_container(
-                    self.container_name
-                ).get_services()
-                self.assertTrue(all(service.is_running() for service in services))
-
-            # AND the unit goes into blocked state
+            # THEN the unit goes into blocked state
             self.assertIsInstance(self.harness.charm.unit.status, BlockedStatus)
 
         finally:
@@ -215,6 +207,7 @@ class TestStatusVsConfig(unittest.TestCase):
                 )
             self.harness.update_config(unset=["git_repo"])
 
+    @patch("charm.COSConfigCharm._exec_sync_repo", lambda *a, **kw: "", "")
     @given(st.integers(1, 5))
     def test_unit_is_active_if_repo_url_provided_and_hash_present(self, num_units):
         """Scenario: Unit is deployed, the repo url config is set after, and hash file present."""
@@ -237,15 +230,7 @@ class TestStatusVsConfig(unittest.TestCase):
             print("PUT FILE")
             self.sandbox.put_file(self.git_hash_file_path, "hash 012345")
 
-            # THEN pebble plan contains the service
-            plan = self.harness.get_container_pebble_plan(self.container_name)
-            self.assertIn(self.harness.charm._service_name, plan.services)
-
-            # AND service is running
-            services = self.harness.model.unit.get_container(self.container_name).get_services()
-            self.assertTrue(all(service.is_running() for service in services))
-
-            # AND the unit goes into active state
+            # THEN the unit goes into active state
             # first need to emit update-status because hash file showed up after hooks fired
             self.harness.charm.on.update_status.emit()
             self.assertIsInstance(self.harness.charm.unit.status, ActiveStatus)

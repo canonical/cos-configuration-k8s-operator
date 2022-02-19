@@ -8,7 +8,7 @@ import hashlib
 import logging
 import os
 import shutil
-from typing import Final, List, Optional, cast
+from typing import Final, List, Optional, Tuple, cast
 
 from charms.grafana_k8s.v0.grafana_dashboard import GrafanaDashboardProvider
 from charms.loki_k8s.v0.loki_push_api import LokiPushApiConsumer
@@ -17,7 +17,7 @@ from charms.prometheus_k8s.v0.prometheus_scrape import PrometheusRulesProvider
 from ops.charm import ActionEvent, CharmBase
 from ops.main import main
 from ops.model import ActiveStatus, BlockedStatus, MaintenanceStatus
-from ops.pebble import APIError, ChangeError, ExecError, Layer
+from ops.pebble import APIError, ChangeError, ExecError
 
 logger = logging.getLogger(__name__)
 
@@ -29,8 +29,18 @@ def sha256(hashable) -> str:
     return hashlib.sha256(hashable).hexdigest()
 
 
-class ServiceRestartError(RuntimeError):
-    """Custom exception for when a service can't/won't restart for whatever reason."""
+class ServiceRestartError(Exception):
+    """Raise when a service can't/won't restart for whatever reason."""
+
+
+class SyncError(Exception):
+    """Raised when git-sync command fails."""
+
+    def __init__(self, message: str, details: str = None):
+        self.message = f"Sync error: {message}"
+        self.details = details
+
+        super().__init__(self.message)
 
 
 class COSConfigCharm(CharmBase):
@@ -143,62 +153,27 @@ class COSConfigCharm(CharmBase):
             self.unit.status = MaintenanceStatus("Waiting for peer relation to be created")
             return
 
-        # Check if stored hash was initialized (it can only be None when a new deployment starts,
-        # at which point no services should be running).
-        if not self._stored_hash:
-            if not self.unit.is_leader():
-                # Relation app data is uninitialized and this is not a leader unit.
-                # Abort; startup sequence will resume when leader updates relation data and
-                # relation-changed fires.
-                self.unit.status = BlockedStatus("Waiting for leader unit to initialize the hash")
-                return
-
-            # Cleanup
-            self._update_relation_data()
-
-        # The only mandatory config option is the `git_repo` option. If it is unset, the repo
-        # folder and hash should reset and the service stopped.
-        # Emptying the folder and stopping the service is required because otherwise the charm libs
-        # (prometheus, loki, grafana) will keep seeing rules/dashboards present.
-        # TODO move into config changed?
-        if not self.config.get("git_repo"):
-            # Stop service and remove the repo folder
-            # Ideally this would be done once, not _every_ time the hook is called, but no harm
-            self._stop_service()
+        if not self._configured:
+            self.unit.status = BlockedStatus("Config options missing - use `juju config`")
             self._remove_repo_folder()
-
-            self._update_relation_data()
-            self.unit.status = BlockedStatus("Repo URL is not set; use `juju config`")
+            self._update_hash_and_rel_data()
             return
 
-        # Update pebble layer to reflect changes in config options
-        overlay = self._layer()
-        plan = self.container.get_plan()
+        try:
+            self._exec_sync_repo()
+        except SyncError as e:
+            # This could be a temporary network error; do not remove repo folder or update relation
+            # data - just set status to blocked: we don't want to drop rules/dashboards just
+            # because a sync failed.
+            # Note that this also applies if the user provided an invalid branch name.
+            self.unit.status = BlockedStatus("Sync failed: " + e.message)
+            return
 
-        if (
-            self._service_name not in plan.services
-            or overlay.services != plan.services
-            or not self.container.get_service(self._service_name).is_running()
-        ):
-            try:
-                # The git-sync sidecar not always clears up on its own any old existing content
-                # self._restart_service()
-                self._stop_service()
-                self._remove_repo_folder()
-                self.container.add_layer(self._layer_name, overlay, combine=True)
-                self._restart_service()
-            except (ChangeError, ServiceRestartError) as e:
-                self.unit.status = BlockedStatus(str(e))
-                return
-
-        # Need to call this again in case files showed up on disk after the last hook fired.
-        self._update_relation_data()
+        self._update_hash_and_rel_data()
 
         if self._stored_hash in [self._hash_placeholder, None]:
-            self.unit.status = BlockedStatus("No hash file yet - wait for update-status")
+            self.unit.status = BlockedStatus("No hash file yet - confirm config is valid")
         else:
-            if not isinstance(self.unit.status, ActiveStatus):
-                logger.info("CONFIGURED state reached")
             self.unit.status = ActiveStatus()
 
     def _on_sync_now_action(self, event: ActionEvent):
@@ -206,34 +181,65 @@ class COSConfigCharm(CharmBase):
         if not self.container.can_connect():
             event.fail("Container not ready")
             return
+        elif not self._configured:
+            event.fail("Config options missing - use `juju config`")
+            return
 
         event.log("Calling git-sync with --one-time...")
 
         try:
-            process = self.container.exec(self._git_sync_command_line(one_time=True))
-        except APIError as e:
-            event.fail(str(e))
+            stdout, stderr = self._exec_sync_repo()
+        except SyncError as e:
+            if e.details:
+                for line in e.details.splitlines():
+                    event.log(line.strip())
+            event.fail(e.message)
             return
 
-        try:
-            stdout, warnings = process.wait_output()
-        except ExecError as e:
-            for line in e.stderr.splitlines():
-                event.log(line)
-            event.fail("Exited with code {e.exit_code}.")
-            return
-        except ChangeError as e:
-            event.fail(str(e))
-            return
-
-        if warnings:
-            for line in warnings.splitlines():
+        if stderr:
+            for line in stderr.splitlines():
                 event.log(f"Warning: {line.strip()}")
 
         event.set_results({"git-sync-stdout": stdout})
 
-        # Do the same thing _update_status() is doing to make sure relation data is up-to-date
+        # Go through the common exit hook to update the store hash
         self._common_exit_hook()
+
+    @property
+    def _configured(self) -> bool:
+        """Check if charm is in 'configured' state.
+
+        The charm is considered 'configured' if the `git_repo` config option is set.
+        """
+        return bool(self.config.get("git_repo"))
+
+    def _exec_sync_repo(self) -> Tuple[str, str]:
+        """Execute the sync command in the workload container.
+
+        Raises:
+            SyncError, if the sync failed.
+
+        Returns:
+            stdout, from the sync command.
+            stderr, from the sync command.
+        """
+        try:
+            process = self.container.exec(self._git_sync_command_line(one_time=True))
+        except APIError as e:
+            raise SyncError(str(e)) from e
+
+        try:
+            stdout, stderr = process.wait_output()
+        except ExecError as e:
+            raise SyncError(f"Exited with code {e.exit_code}.", e.stderr) from e
+        except ChangeError as e:
+            raise SyncError(str(e)) from e
+
+        if stderr:
+            for line in stderr.splitlines():
+                logger.info(f"git-sync: {line.strip()}")
+
+        return stdout, stderr
 
     def _remove_repo_folder(self):
         """Remove the repo folder."""
@@ -249,6 +255,8 @@ class COSConfigCharm(CharmBase):
 
     def _git_sync_command_line(self, one_time=False) -> List[str]:
         """Construct the command line for running git-sync.
+
+        See https://github.com/kubernetes/git-sync.
 
         Args:
             one_time: flag for adding the `--one-time` argument to have git-sync exit after the
@@ -292,27 +300,6 @@ class COSConfigCharm(CharmBase):
 
         return cmd
 
-    def _layer(self) -> Layer:
-        """Build overlay layer for the git-sync service.
-
-        This layer is used for launching a git-sync (https://github.com/kubernetes/git-sync)
-        container with custom arguments.
-        """
-        return Layer(
-            {
-                "summary": f"{self._service_name} layer",
-                "description": f"pebble config layer for {self._service_name}",
-                "services": {
-                    self._service_name: {
-                        "override": "replace",
-                        "summary": f"{self._service_name} service",
-                        "startup": "disabled",
-                        "command": " ".join(self._git_sync_command_line()),
-                    },
-                },
-            }
-        )
-
     def _on_relation_joined(self, _):
         """Event handler for the relation joined event of prometheus, loki or grafana."""
         self._common_exit_hook()
@@ -352,23 +339,16 @@ class COSConfigCharm(CharmBase):
             logger.info(
                 "setting stored hash from [%s] to [%s]", relation.data[self.app].get("hash"), sha
             )
+            # TODO: is this needed for every relation? app data should be the same for all
             relation.data[self.app]["hash"] = sha
 
-    def _update_hash(self) -> bool:
+    def _update_hash_and_rel_data(self):
         # Use the contents of the hash file as an indication for a change in the repo.
-        # If the git hash is not yet in peer relation data, add it now.
         # When the charm is first deployed, relation data is empty. Need to change it to the
         # placeholder value, indicating there is no hash file present yet, or to the contents of
         # the hash file if it is present.
-        if not self.unit.is_leader():
-            return False
-
-        hash_changed = True
         current_hash = self._get_current_hash()
-        if not self._stored_hash:
-            self._stored_hash = current_hash
-            logger.info("IDLE state reached")
-        elif current_hash != self._stored_hash:
+        if current_hash != self._stored_hash and self.unit.is_leader():
             logger.info(
                 "Updating stored hash: git-sync hash changed from %s (%s) to %s (%s)",
                 self._stored_hash,
@@ -376,21 +356,10 @@ class COSConfigCharm(CharmBase):
                 current_hash,
                 type(current_hash),
             )
-            self._stored_hash = current_hash
-        else:
-            hash_changed = False
-
-        return hash_changed
-
-    def _update_relation_data(self):
-        """Reinitialize relation data, if the underlying data changed."""
-        if not self.unit.is_leader():
-            return
-
-        if self._update_hash():
             self.prom_rules_provider._reinitialize_alert_rules()
             self.loki_rules_provider._reinitialize_alert_rules()
             self.grafana_dashboards_provider._reinitialize_dashboard_data()
+            self._stored_hash = current_hash
 
     def _on_git_sync_pebble_ready(self, _):
         """Event handler for PebbleReadyEvent."""
@@ -405,44 +374,12 @@ class COSConfigCharm(CharmBase):
         self._common_exit_hook()
 
     def _on_start(self, _):
-        """Event handler for StartEvent.
-
-        With Juju 2.9.5 encountered a scenario in which pebble_ready and config_changed fired,
-        but IP address was not available and the status was stuck on "Waiting for IP address".
-        Adding this hook reduce the likelihood of that scenario.
-        """
+        """Event handler for StartEvent."""
         self._common_exit_hook()
 
     def _on_config_changed(self, _):
         """Event handler for ConfigChangedEvent."""
         self._common_exit_hook()
-
-    def _stop_service(self):
-        """Helper to stop the service, suppressing exceptions (in case it is not running)."""
-        try:
-            self.container.stop(self._service_name)
-        except:  # noqa E722
-            pass
-
-    def _restart_service(self) -> None:
-        """Helper function for restarting the underlying service."""
-        logger.info("Restarting service %s", self._service_name)
-
-        if not self.container.can_connect():
-            raise ServiceRestartError("Cannot (re)start service: container is not ready.")
-
-        # Check if service exists, to avoid ModelError from being raised when the service does
-        # not yet exist
-        if self._service_name not in self.container.get_plan().services:
-            raise ServiceRestartError("Cannot (re)start service: service does not (yet) exist.")
-
-        self.container.restart(self._service_name)
-
-        service_running = (
-            service := self.container.get_service(self._service_name)
-        ) and service.is_running()
-        if not service_running:
-            raise ServiceRestartError("Attempted to restart service but it is not running")
 
 
 if __name__ == "__main__":

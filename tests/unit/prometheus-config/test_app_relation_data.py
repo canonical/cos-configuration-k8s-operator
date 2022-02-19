@@ -62,6 +62,7 @@ class TestAppRelationData(unittest.TestCase):
             }
         )
 
+    @patch("charm.COSConfigCharm._exec_sync_repo", lambda *a, **kw: "", "")
     def test_files_appear_on_disk_after_the_last_hook_fired(self):
         """Scenario: Alert rules show up show up on disk only after config_changed etc. fired."""
         # GIVEN the current unit is the leader
@@ -90,6 +91,7 @@ class TestAppRelationData(unittest.TestCase):
         rel_data = relation.data[self.harness.charm.app]
         self.assertNotEqual(rel_data["alert_rules"], "{}")
 
+    @patch("charm.COSConfigCharm._exec_sync_repo", lambda *a, **kw: "", "")
     @given(
         st.sampled_from(
             [
@@ -131,6 +133,7 @@ class TestAppRelationData(unittest.TestCase):
             if rel_id:
                 self.harness.remove_relation(rel_id)
 
+    @patch("charm.COSConfigCharm._exec_sync_repo", lambda *a, **kw: "", "")
     @given(
         st.sampled_from(
             [
