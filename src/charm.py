@@ -224,7 +224,7 @@ class COSConfigCharm(CharmBase):
             stderr, from the sync command.
         """
         try:
-            process = self.container.exec(self._git_sync_command_line(one_time=True))
+            process = self.container.exec(self._git_sync_command_line())
         except APIError as e:
             raise SyncError(str(e)) from e
 
@@ -253,19 +253,14 @@ class COSConfigCharm(CharmBase):
         # but to keep unittest simpler, doing it from the charm container's mount point
         shutil.rmtree(self._repo_path, ignore_errors=True)
 
-    def _git_sync_command_line(self, one_time=False) -> List[str]:
+    def _git_sync_command_line(self) -> List[str]:
         """Construct the command line for running git-sync.
 
         See https://github.com/kubernetes/git-sync.
-
-        Args:
-            one_time: flag for adding the `--one-time` argument to have git-sync exit after the
-            first sync.
         """
         repo = cast(str, self.config.get("git_repo"))
         branch = cast(str, self.config.get("git_branch"))
         rev = cast(str, self.config.get("git_rev"))
-        wait = str(self.config.get("git_wait"))  # converting to str so that 0 evaluates as True
 
         cmd = ["/git-sync"]
         cmd.extend(["--repo", repo])
@@ -284,19 +279,7 @@ class COSConfigCharm(CharmBase):
             ]
         )
 
-        if one_time:
-            cmd.append("--one-time")
-        else:
-            if wait:
-                cmd.extend(["--wait", wait])
-            cmd.extend(
-                [
-                    "--http-bind",
-                    f":{self._git_sync_port}",
-                    "--http-metrics",
-                    "true",
-                ]
-            )
+        cmd.append("--one-time")
 
         return cmd
 

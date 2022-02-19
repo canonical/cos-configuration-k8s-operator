@@ -13,11 +13,6 @@ options:
     type: string
     description: the git revision (tag or hash) to check out
     default: HEAD
-  git_wait:
-    type: int
-    description: The number of seconds between syncs.
-    # This default is different from git-sync's default (1s)
-    default: 60
   prometheus_alert_rules_path:
     type: string
     description: Relative path in repo to prometheus rules.
