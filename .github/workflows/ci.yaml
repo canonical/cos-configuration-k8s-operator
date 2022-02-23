@@ -60,7 +60,6 @@ jobs:
       uses: charmed-kubernetes/actions-operator@main
       with:
         provider: microk8s
-        channel: 1.21/stable
-        charmcraft-channel: latest/candidate
+        lxd-channel: 4.0/stable
     - name: Run lma-rules integration tests
       run: tox -vve integration
