@@ -78,6 +78,7 @@ class TestReinitializeCalledOnce(unittest.TestCase):
         finally:
             self.harness.cleanup()
 
+    @patch("charm.COSConfigCharm._exec_sync_repo", lambda *a, **kw: "", "")
     @patch("charm.KubernetesServicePatch", lambda x, y: None)
     @given(st.integers(1, 5))
     def test_leader_reinitialize_once_with_config_and_update_status_fires(self, num_units):
@@ -137,6 +138,7 @@ class TestReinitializeCalledOnce(unittest.TestCase):
         finally:
             self.harness.cleanup()
 
+    @patch("charm.COSConfigCharm._exec_sync_repo", lambda *a, **kw: "", "")
     @patch("charm.KubernetesServicePatch", lambda x, y: None)
     @given(st.integers(1, 5))
     def test_leader_reinitialize_once_when_repo_unset(self, num_units):
@@ -210,6 +212,7 @@ class TestConfigChanged(unittest.TestCase):
     over to the related apps.
     """
 
+    @patch("charm.COSConfigCharm._exec_sync_repo", lambda *a, **kw: "", "")
     @patch("charm.KubernetesServicePatch", lambda x, y: None)
     @given(
         st.tuples(
