@@ -48,7 +48,7 @@ Currently, supported relations are:
 
 ## OCI Images
 This charm can be used with the following image:
-- `k8s.gcr.io/git-sync/git-sync:v3.4.0`
+- `k8s.gcr.io/git-sync/git-sync:v3.5.0`
 
 
 [Prometheus operator]: https://charmhub.io/prometheus-k8s

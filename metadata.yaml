@@ -19,7 +19,7 @@ resources:
   git-sync-image:
     type: oci-image
     description: OCI image for git-sync
-    upstream-source: k8s.gcr.io/git-sync/git-sync:v3.4.0
+    upstream-source: k8s.gcr.io/git-sync/git-sync:v3.5.0
 
 storage:
   content-from-git:
