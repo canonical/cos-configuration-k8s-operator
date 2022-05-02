@@ -10,7 +10,6 @@ from typing import List, Tuple
 from unittest.mock import patch
 
 import hypothesis.strategies as st
-from helpers import TempFolderSandbox
 from hypothesis import given
 from ops.model import ActiveStatus, BlockedStatus
 from ops.testing import Harness
@@ -47,6 +46,10 @@ class TestBlockedStatus(unittest.TestCase):
 
             # AND the current unit could be either a leader or not
             self.harness.set_leader(is_leader)
+
+            # AND storage is attached
+            storage_id = self.harness.add_storage("content-from-git")[0]
+            self.harness.attach_storage(storage_id)
 
             self.harness.begin_with_initial_hooks()
 
@@ -103,6 +106,10 @@ class TestRandomHooks(unittest.TestCase):
         # GIVEN app starts with a single unit (which is the leader)
         self.harness.set_leader(True)
 
+        # AND storage is attached
+        storage_id = self.harness.add_storage("content-from-git")[0]
+        self.harness.attach_storage(storage_id)
+
         # AND the usual startup hooks fire
         self.harness.begin_with_initial_hooks()
 
@@ -154,23 +161,17 @@ class TestStatusVsConfig(unittest.TestCase):
 
     @patch("charm.KubernetesServicePatch", lambda x, y: None)
     def setUp(self):
-        # mock charm container's mount
-        self.sandbox = TempFolderSandbox()
-        self.abs_repo_path = os.path.join(self.sandbox.root, "repo")
-        COSConfigCharm._repo_path = self.abs_repo_path
-
         self.harness = Harness(COSConfigCharm)
         self.addCleanup(self.harness.cleanup)
 
         self.peer_rel_id = self.harness.add_relation("replicas", self.harness.model.app.name)
+
+        storage_id = self.harness.add_storage("content-from-git")[0]
+        self.harness.attach_storage(storage_id)
+
         self.harness.begin_with_initial_hooks()
 
         self.container_name = self.harness.charm._container_name
-
-        # paths relative to sandbox root
-        self.git_hash_file_path = os.path.relpath(
-            self.harness.charm._git_hash_file_path, self.sandbox.root
-        )
 
     @patch("charm.COSConfigCharm._exec_sync_repo", lambda *a, **kw: "", "")
     @given(st.booleans(), st.integers(1, 5))
@@ -227,8 +228,11 @@ class TestStatusVsConfig(unittest.TestCase):
             self.harness.update_config({"git_repo": "http://does.not.really.matter/repo.git"})
 
             # AND hash file present
-            print("PUT FILE")
-            self.sandbox.put_file(self.git_hash_file_path, "hash 012345")
+            container = self.harness.model.unit.get_container("git-sync")
+            hash_file_path = os.path.join(
+                self.harness.charm._git_sync_mount_point_sidecar, self.harness.charm.SUBDIR, ".git"
+            )
+            container.push(hash_file_path, "hash 012345", make_dirs=True)
 
             # THEN the unit goes into active state
             # first need to emit update-status because hash file showed up after hooks fired
@@ -240,4 +244,3 @@ class TestStatusVsConfig(unittest.TestCase):
             # for i in reversed(range(1, num_units)):
             #     self.harness.remove_relation_unit(self.peer_rel_id, f"{self.app_name}/{i}")
             self.harness.update_config(unset=["git_repo"])
-            self.sandbox.clear()

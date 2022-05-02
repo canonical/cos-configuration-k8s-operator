@@ -58,10 +58,6 @@ class COSConfigCharm(CharmBase):
     # Since this is an implementation detail, it is captured here as a class variable.
     SUBDIR: Final = "repo"
 
-    # path to the repo in the _charm_ container
-    _git_sync_mount_point = self.model.storages["content-from-git"][0]
-    _repo_path = os.path.join(_git_sync_mount_point, SUBDIR)
-
     prometheus_relation_name = "prometheus-config"
     loki_relation_name = "loki-config"
     grafana_relation_name = "grafana-dashboards"
@@ -70,6 +66,10 @@ class COSConfigCharm(CharmBase):
 
     def __init__(self, *args):
         super().__init__(*args)
+
+        # path to the repo in the _charm_ container
+        self._git_sync_mount_point = self.model.storages["content-from-git"][0].location
+        self._repo_path = os.path.join(self._git_sync_mount_point, self.SUBDIR)
 
         self.container = self.unit.get_container(self._container_name)
 

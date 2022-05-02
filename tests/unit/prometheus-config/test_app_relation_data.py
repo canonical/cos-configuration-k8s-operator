@@ -9,7 +9,6 @@ from unittest.mock import patch
 
 import hypothesis.strategies as st
 import yaml
-from helpers import TempFolderSandbox
 from hypothesis import given
 from ops.model import ActiveStatus
 from ops.testing import Harness
@@ -28,30 +27,34 @@ class TestAppRelationData(unittest.TestCase):
 
     @patch("charm.KubernetesServicePatch", lambda x, y: None)
     def setUp(self):
-        # mock charm container's mount
-        self.sandbox = TempFolderSandbox()
-        self.abs_repo_path = os.path.join(self.sandbox.root, "repo")
-        COSConfigCharm._repo_path = self.abs_repo_path
-
         self.harness = Harness(COSConfigCharm)
         self.addCleanup(self.harness.cleanup)
 
         self.app_name = "cos-configuration-k8s"
         self.peer_rel_id = self.harness.add_relation("replicas", self.app_name)
+
+        storage_id = self.harness.add_storage("content-from-git")[0]
+        self.harness.attach_storage(storage_id)
+
         self.harness.begin_with_initial_hooks()
 
-        # paths relative to sandbox root
-        self.prom_alert_dir = os.path.relpath(
-            self.harness.charm.prom_rules_provider.dir_path, self.sandbox.root
+        # paths
+        self.prom_alert_dir = os.path.join(
+            self.harness.charm._git_sync_mount_point_sidecar,
+            self.harness.charm.SUBDIR,
+            self.harness.charm.config["prometheus_alert_rules_path"],
         )
         self.prom_alert_filepath = os.path.join(self.prom_alert_dir, "alert.rule")
-        self.loki_alert_dir = os.path.relpath(
-            self.harness.charm.loki_rules_provider._alert_rules_path, self.sandbox.root
+
+        self.loki_alert_dir = os.path.join(
+            self.harness.charm._git_sync_mount_point_sidecar,
+            self.harness.charm.SUBDIR,
+            self.harness.charm.config["loki_alert_rules_path"],
         )
         self.loki_alert_filepath = os.path.join(self.loki_alert_dir, "alert.rule")
 
-        self.git_hash_file_path = os.path.relpath(
-            self.harness.charm._git_hash_file_path, self.sandbox.root
+        self.git_hash_file_path = os.path.join(
+            self.harness.charm._git_sync_mount_point_sidecar, self.harness.charm.SUBDIR, ".git"
         )
 
         # the star of the show
@@ -81,8 +84,9 @@ class TestAppRelationData(unittest.TestCase):
         self.harness.update_config({"git_repo": "http://does.not.really.matter/repo.git"})
 
         # AND the files appear on disk AFTER the last hook fired
-        self.sandbox.put_file(self.prom_alert_filepath, self.free_standing_rule)
-        self.sandbox.put_file(self.git_hash_file_path, "hash 012345")
+        container = self.harness.model.unit.get_container("git-sync")
+        container.push(self.prom_alert_filepath, self.free_standing_rule, make_dirs=True)
+        container.push(self.git_hash_file_path, "hash 012345", make_dirs=True)
 
         # AND update_status fires some time later
         self.harness.charm.on.update_status.emit()
@@ -114,7 +118,8 @@ class TestAppRelationData(unittest.TestCase):
             self.harness.update_config({"git_repo": "http://does.not.really.matter/repo.git"})
 
             # AND the files appear on disk AFTER the last hook fired
-            self.sandbox.put_file(self.git_hash_file_path, "hash 012345")
+            container = self.harness.model.unit.get_container("git-sync")
+            container.push(self.git_hash_file_path, "hash 012345", make_dirs=True)
 
             # WHEN a relation joins
             # rel_id = self.harness.add_relation("prometheus-config", "prom")
@@ -128,7 +133,6 @@ class TestAppRelationData(unittest.TestCase):
         finally:
             # cleanup added units to prep for reentry by hypothesis' strategy
             self.harness.set_leader(False)
-            self.sandbox.clear()
             self.harness.update_config(unset=["git_repo"])
             if rel_id:
                 self.harness.remove_relation(rel_id)
@@ -160,9 +164,10 @@ class TestAppRelationData(unittest.TestCase):
             self.harness.update_config({"git_repo": "http://does.not.really.matter/repo.git"})
 
             # AND the files appear on disk AFTER the last hook fired
-            self.sandbox.put_file(self.prom_alert_filepath, self.free_standing_rule)
-            self.sandbox.put_file(self.loki_alert_filepath, self.free_standing_rule)
-            self.sandbox.put_file(self.git_hash_file_path, "hash 012345")
+            container = self.harness.model.unit.get_container("git-sync")
+            container.push(self.prom_alert_filepath, self.free_standing_rule, make_dirs=True)
+            container.push(self.loki_alert_filepath, self.free_standing_rule, make_dirs=True)
+            container.push(self.git_hash_file_path, "hash 012345", make_dirs=True)
 
             # THEN after update status app relation data gets updated
             self.harness.charm.on.update_status.emit()
@@ -176,7 +181,6 @@ class TestAppRelationData(unittest.TestCase):
         finally:
             # cleanup added units to prep for reentry by hypothesis' strategy
             self.harness.set_leader(False)
-            self.sandbox.clear()
             self.harness.update_config(unset=["git_repo"])
             if rel_id:
                 self.harness.remove_relation(rel_id)
