@@ -59,7 +59,7 @@ class COSConfigCharm(CharmBase):
     SUBDIR: Final = "repo"
 
     # path to the repo in the _charm_ container
-    _git_sync_mount_point = "/var/lib/juju/storage/content-from-git/0"
+    _git_sync_mount_point = self.model.storages["content-from-git"][0]
     _repo_path = os.path.join(_git_sync_mount_point, SUBDIR)
 
     prometheus_relation_name = "prometheus-config"
