@@ -2,6 +2,8 @@
 # See LICENSE file for licensing details.
 
 git+https://github.com/canonical/operator/#egg=ops
+#git+https://github.com/rwcarlsen/operator@rm-storage-error#egg=ops
+#ops
 PyYAML
 lightkube
 lightkube-models

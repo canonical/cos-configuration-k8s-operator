@@ -51,8 +51,7 @@ class TestBlockedStatus(unittest.TestCase):
             self.harness.set_leader(is_leader)
 
             # AND storage is attached
-            storage_id = self.harness.add_storage("content-from-git")[0]
-            self.harness.attach_storage(storage_id)
+            self.harness.add_storage("content-from-git", attach=True)
 
             self.harness.begin_with_initial_hooks()
             self.harness.container_pebble_ready("git-sync")
@@ -111,8 +110,7 @@ class TestRandomHooks(unittest.TestCase):
         self.harness.set_leader(True)
 
         # AND storage is attached
-        storage_id = self.harness.add_storage("content-from-git")[0]
-        self.harness.attach_storage(storage_id)
+        self.harness.add_storage("content-from-git", attach=True)
 
         # AND the usual startup hooks fire
         self.harness.begin_with_initial_hooks()
@@ -124,11 +122,12 @@ class TestRandomHooks(unittest.TestCase):
             # WHEN later on the user adds relations and more units
             units_to_add = [lambda: self.harness.set_leader(is_leader)]
             for rel_name, num_remote_units in rel_list:
-                rel_id = self.harness.add_relation(rel_name, f"{self.harness.model.app.name}-app")
+                app_name = f"{self.harness.model.app.name}-app"
+                rel_id = self.harness.add_relation(rel_name, app_name)
                 units_to_add.extend(
                     [
                         lambda rel_id=rel_id, rel_name=rel_name, num_units=num_units: self.harness.add_relation_unit(  # type: ignore
-                            rel_id, f"{rel_name}/{num_units}"
+                            rel_id, f"{app_name}/{num_units}"
                         )
                         for num_units in range(num_remote_units)
                     ]
@@ -171,8 +170,7 @@ class TestStatusVsConfig(unittest.TestCase):
 
         self.peer_rel_id = self.harness.add_relation("replicas", self.harness.model.app.name)
 
-        storage_id = self.harness.add_storage("content-from-git")[0]
-        self.harness.attach_storage(storage_id)
+        self.harness.add_storage("content-from-git", attach=True)
 
         self.harness.begin_with_initial_hooks()
         self.harness.container_pebble_ready("git-sync")

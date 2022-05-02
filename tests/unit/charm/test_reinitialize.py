@@ -45,8 +45,7 @@ class TestReinitializeCalledOnce(unittest.TestCase):
         self.harness.set_leader(True)
 
         # AND storage is attached
-        storage_id = self.harness.add_storage("content-from-git")[0]
-        self.harness.attach_storage(storage_id)
+        self.harness.add_storage("content-from-git", attach=True)
 
         self.harness.begin_with_initial_hooks()
         self.harness.container_pebble_ready("git-sync")
@@ -93,8 +92,7 @@ class TestReinitializeCalledOnce(unittest.TestCase):
         self.harness.set_leader(True)
 
         # AND storage is attached
-        storage_id = self.harness.add_storage("content-from-git")[0]
-        self.harness.attach_storage(storage_id)
+        self.harness.add_storage("content-from-git", attach=True)
 
         self.harness.begin_with_initial_hooks()
         self.harness.container_pebble_ready("git-sync")
@@ -154,8 +152,7 @@ class TestReinitializeCalledOnce(unittest.TestCase):
         self.harness.set_leader(True)
 
         # AND storage is attached
-        storage_id = self.harness.add_storage("content-from-git")[0]
-        self.harness.attach_storage(storage_id)
+        self.harness.add_storage("content-from-git", attach=True)
 
         self.harness.begin_with_initial_hooks()
         self.harness.container_pebble_ready("git-sync")
@@ -237,8 +234,7 @@ class TestConfigChanged(unittest.TestCase):
             self.harness.set_leader(True)
 
             # AND storage is attached
-            storage_id = self.harness.add_storage("content-from-git")[0]
-            self.harness.attach_storage(storage_id)
+            self.harness.add_storage("content-from-git", attach=True)
 
             self.harness.begin_with_initial_hooks()
             self.harness.container_pebble_ready("git-sync")

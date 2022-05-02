@@ -34,8 +34,7 @@ class TestAppRelationData(unittest.TestCase):
         self.app_name = "cos-configuration-k8s"
         self.peer_rel_id = self.harness.add_relation("replicas", self.app_name)
 
-        storage_id = self.harness.add_storage("content-from-git")[0]
-        self.harness.attach_storage(storage_id)
+        self.harness.add_storage("content-from-git", attach=True)
 
         self.harness.begin_with_initial_hooks()
         self.harness.container_pebble_ready("git-sync")
