@@ -21,7 +21,8 @@ to [prometheus][Prometheus operator], [loki][Loki operator] or
 ```shell
 juju deploy cos-configuration-k8s \
   --config git_repo=https://path.to/repo \
-  --config git_reference=main \
+  --config git_branch=main \
+  --config git_depth=1 \
   --config prometheus_alert_rules_path=rules/prod/prometheus/
 
 juju relate cos-configuration-k8s prometheus-k8s
