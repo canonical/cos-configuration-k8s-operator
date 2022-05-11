@@ -11,8 +11,14 @@ options:
     default: master
   git_rev:
     type: string
-    description: the git revision (tag or hash) to check out
+    description: The git revision (tag or hash) to check out
     default: HEAD
+  git_depth:
+    type: int
+    description: >
+      Cloning depth, to truncate commit history to the specified number of commits.
+      Zero (default) means no truncating.
+    default: 0
   prometheus_alert_rules_path:
     type: string
     description: Relative path in repo to prometheus rules.
