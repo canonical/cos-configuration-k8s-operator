@@ -261,6 +261,7 @@ class COSConfigCharm(CharmBase):
         repo = cast(str, self.config.get("git_repo"))
         branch = cast(str, self.config.get("git_branch"))
         rev = cast(str, self.config.get("git_rev"))
+        depth = cast(int, self.config.get("git_depth"))
 
         cmd = ["/git-sync"]
         cmd.extend(["--repo", repo])
@@ -268,10 +269,10 @@ class COSConfigCharm(CharmBase):
             cmd.extend(["--branch", branch])
         if rev:
             cmd.extend(["--rev", rev])
+        if depth and depth > 0:
+            cmd.extend(["--depth", str(depth)])
         cmd.extend(
             [
-                "--depth",
-                "1",
                 "--root",
                 self._git_sync_mount_point_sidecar,
                 "--dest",
