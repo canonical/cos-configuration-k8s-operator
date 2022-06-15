@@ -9,6 +9,7 @@ import unittest
 from unittest.mock import patch
 
 import hypothesis.strategies as st
+import ops
 from charms.grafana_k8s.v0.grafana_dashboard import GrafanaDashboardProvider
 from charms.loki_k8s.v0.loki_push_api import LokiPushApiConsumer
 from charms.prometheus_k8s.v0.prometheus_scrape import PrometheusRulesProvider
@@ -18,6 +19,8 @@ from ops.testing import Harness
 from charm import COSConfigCharm
 
 logger = logging.getLogger(__name__)
+
+ops.testing.SIMULATE_CAN_CONNECT = True
 
 
 class TestReinitializeCalledOnce(unittest.TestCase):
@@ -46,6 +49,7 @@ class TestReinitializeCalledOnce(unittest.TestCase):
         self.harness.attach_storage(storage_id)
 
         self.harness.begin_with_initial_hooks()
+        self.harness.container_pebble_ready("git-sync")
 
         # without the try-finally, if any assertion fails, then hypothesis would reenter without
         # the cleanup, carrying forward the units that were previously added
@@ -93,6 +97,7 @@ class TestReinitializeCalledOnce(unittest.TestCase):
         self.harness.attach_storage(storage_id)
 
         self.harness.begin_with_initial_hooks()
+        self.harness.container_pebble_ready("git-sync")
 
         # without the try-finally, if any assertion fails, then hypothesis would reenter without
         # the cleanup, carrying forward the units that were previously added
@@ -153,6 +158,7 @@ class TestReinitializeCalledOnce(unittest.TestCase):
         self.harness.attach_storage(storage_id)
 
         self.harness.begin_with_initial_hooks()
+        self.harness.container_pebble_ready("git-sync")
 
         # without the try-finally, if any assertion fails, then hypothesis would reenter without
         # the cleanup, carrying forward the units that were previously added
@@ -235,6 +241,7 @@ class TestConfigChanged(unittest.TestCase):
             self.harness.attach_storage(storage_id)
 
             self.harness.begin_with_initial_hooks()
+            self.harness.container_pebble_ready("git-sync")
 
             # AND some initial config is provided
             fake_repo_url = "http://does.not.really.matter/repo.git"

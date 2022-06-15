@@ -8,6 +8,7 @@ import unittest
 from unittest.mock import patch
 
 import hypothesis.strategies as st
+import ops
 import yaml
 from hypothesis import given
 from ops.model import ActiveStatus
@@ -16,6 +17,8 @@ from ops.testing import Harness
 from charm import COSConfigCharm
 
 logger = logging.getLogger(__name__)
+
+ops.testing.SIMULATE_CAN_CONNECT = True
 
 
 class TestAppRelationData(unittest.TestCase):
@@ -37,6 +40,7 @@ class TestAppRelationData(unittest.TestCase):
         self.harness.attach_storage(storage_id)
 
         self.harness.begin_with_initial_hooks()
+        self.harness.container_pebble_ready("git-sync")
 
         # paths
         self.prom_alert_dir = os.path.join(

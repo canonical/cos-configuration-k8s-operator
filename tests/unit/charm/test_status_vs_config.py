@@ -10,6 +10,7 @@ from typing import List, Tuple
 from unittest.mock import patch
 
 import hypothesis.strategies as st
+import ops
 from hypothesis import given
 from ops.model import ActiveStatus, BlockedStatus
 from ops.testing import Harness
@@ -17,6 +18,8 @@ from ops.testing import Harness
 from charm import COSConfigCharm
 
 logger = logging.getLogger(__name__)
+
+ops.testing.SIMULATE_CAN_CONNECT = True
 
 
 class TestBlockedStatus(unittest.TestCase):
@@ -52,6 +55,7 @@ class TestBlockedStatus(unittest.TestCase):
             self.harness.attach_storage(storage_id)
 
             self.harness.begin_with_initial_hooks()
+            self.harness.container_pebble_ready("git-sync")
 
             # WHEN no config is provided
 
@@ -112,6 +116,7 @@ class TestRandomHooks(unittest.TestCase):
 
         # AND the usual startup hooks fire
         self.harness.begin_with_initial_hooks()
+        self.harness.container_pebble_ready("git-sync")
 
         try:
             self.assertEqual(self.harness.model.app.planned_units(), 1)
@@ -170,6 +175,7 @@ class TestStatusVsConfig(unittest.TestCase):
         self.harness.attach_storage(storage_id)
 
         self.harness.begin_with_initial_hooks()
+        self.harness.container_pebble_ready("git-sync")
 
         self.container_name = self.harness.charm._container_name
 
