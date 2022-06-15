@@ -81,6 +81,7 @@ class TestAppRelationData(unittest.TestCase):
 
         # AND empty app relation data
         relation = self.harness.charm.model.get_relation("prometheus-config")
+        assert relation is not None
         rel_data = relation.data[self.harness.charm.app]
         self.assertEqual(rel_data["alert_rules"], "{}")
 
@@ -176,6 +177,7 @@ class TestAppRelationData(unittest.TestCase):
             # THEN after update status app relation data gets updated
             self.harness.charm.on.update_status.emit()
             relation = self.harness.charm.model.get_relation(rel_name)
+            assert relation is not None
             rel_data = relation.data[self.harness.charm.app]
             self.assertNotEqual(rel_data["alert_rules"], "{}")
 

@@ -311,7 +311,9 @@ class COSConfigCharm(CharmBase):
 
     @property
     def _stored_hash(self) -> Optional[str]:
-        return self.model.get_relation(self._peer_relation_name).data[self.app].get("hash", None)
+        if relation := self.model.get_relation(self._peer_relation_name):
+            return relation.data[self.app].get("hash", None)
+        return None
 
     @_stored_hash.setter
     def _stored_hash(self, sha: str):
