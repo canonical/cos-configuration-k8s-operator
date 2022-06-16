@@ -7,10 +7,8 @@ import os
 import unittest
 from unittest.mock import patch
 
-import hypothesis.strategies as st
 import ops
 import yaml
-from hypothesis import given
 from ops.model import ActiveStatus
 from ops.testing import Harness
 
@@ -61,7 +59,6 @@ class TestAppRelationData(unittest.TestCase):
             self.harness.charm._git_sync_mount_point_sidecar, self.harness.charm.SUBDIR, ".git"
         )
 
-        # the star of the show
         self.free_standing_rule = yaml.safe_dump(
             {
                 "alert": "free_standing",
@@ -101,92 +98,60 @@ class TestAppRelationData(unittest.TestCase):
         self.assertNotEqual(rel_data["alert_rules"], "{}")
 
     @patch("charm.COSConfigCharm._exec_sync_repo", lambda *a, **kw: "", "")
-    @given(
-        st.sampled_from(
-            [
-                COSConfigCharm.prometheus_relation_name,
-                COSConfigCharm.loki_relation_name,
-                COSConfigCharm.grafana_relation_name,
-            ]
-        )
-    )
-    def test_unit_is_active_if_repo_url_provided_hash_present_and_relation_joins(self, rel_name):
+    def test_unit_is_active_if_repo_url_provided_hash_present_and_relation_joins(self):
         """Scenario: Files are on disk and the charm is blocked, but now a relation joins."""
-        rel_id = None
-        # without the try-finally, if any assertion fails, then hypothesis would reenter without
-        # the cleanup, carrying forward the units that were previously added
-        try:
-            # GIVEN the current unit is the leader
-            self.harness.set_leader(True)
+        # GIVEN the current unit is the leader
+        self.harness.set_leader(True)
 
-            # AND the user configures the repo url
-            self.harness.update_config({"git_repo": "http://does.not.really.matter/repo.git"})
+        # AND the user configures the repo url
+        self.harness.update_config({"git_repo": "http://does.not.really.matter/repo.git"})
 
-            # AND the files appear on disk AFTER the last hook fired
-            container = self.harness.model.unit.get_container("git-sync")
-            container.push(self.git_hash_file_path, "hash 012345", make_dirs=True)
+        # AND the files appear on disk AFTER the last hook fired
+        container = self.harness.model.unit.get_container("git-sync")
+        container.push(self.git_hash_file_path, "hash 012345", make_dirs=True)
 
-            # WHEN a relation joins
-            # rel_id = self.harness.add_relation("prometheus-config", "prom")
-            # self.harness.add_relation_unit(rel_id, "prom/0")
+        # WHEN a relation joins
+        for rel_name in [
+            COSConfigCharm.prometheus_relation_name,
+            COSConfigCharm.loki_relation_name,
+            COSConfigCharm.grafana_relation_name,
+        ]:
             rel_id = self.harness.add_relation(rel_name, f"{rel_name}-charm")
             self.harness.add_relation_unit(rel_id, f"{rel_name}-charm/0")
 
-            # THEN the unit goes into active state
-            self.assertIsInstance(self.harness.charm.unit.status, ActiveStatus)
-
-        finally:
-            # cleanup added units to prep for reentry by hypothesis' strategy
-            self.harness.set_leader(False)
-            self.harness.update_config(unset=["git_repo"])
-            if rel_id:
-                self.harness.remove_relation(rel_id)
+        # THEN the unit goes into active state
+        self.assertIsInstance(self.harness.charm.unit.status, ActiveStatus)
 
     @patch("charm.COSConfigCharm._exec_sync_repo", lambda *a, **kw: "", "")
-    @given(
-        st.sampled_from(
-            [
-                COSConfigCharm.prometheus_relation_name,
-                COSConfigCharm.loki_relation_name,
-                # COSConfigCharm.grafana_relation_name, # TODO sandbox.put_file dashboard dummy
-            ]
-        )
-    )
-    def test_unit_is_active_if_relation_joins_first_and_then_charm_config(self, rel_name):
+    def test_unit_is_active_if_relation_joins_first_and_then_charm_config(self):
         """Scenario: A relation joins first, and only then the repo url is set."""
-        rel_id = None
-        # without the try-finally, if any assertion fails, then hypothesis would reenter without
-        # the cleanup, carrying forward the units that were previously added
-        try:
-            # GIVEN the current unit is the leader
-            self.harness.set_leader(True)
+        # GIVEN the current unit is the leader
+        self.harness.set_leader(True)
 
-            # AND a relation joins
+        # AND a relation joins
+        for rel_name in [
+            COSConfigCharm.prometheus_relation_name,
+            COSConfigCharm.loki_relation_name,
+            # COSConfigCharm.grafana_relation_name, # TODO push dashboard dummy
+        ]:
             rel_id = self.harness.add_relation(rel_name, f"{rel_name}-charm")
             self.harness.add_relation_unit(rel_id, f"{rel_name}-charm/0")
 
-            # WHEN the user configures the repo url
-            self.harness.update_config({"git_repo": "http://does.not.really.matter/repo.git"})
+        # WHEN the user configures the repo url
+        self.harness.update_config({"git_repo": "http://does.not.really.matter/repo.git"})
 
-            # AND the files appear on disk AFTER the last hook fired
-            container = self.harness.model.unit.get_container("git-sync")
-            container.push(self.prom_alert_filepath, self.free_standing_rule, make_dirs=True)
-            container.push(self.loki_alert_filepath, self.free_standing_rule, make_dirs=True)
-            container.push(self.git_hash_file_path, "hash 012345", make_dirs=True)
+        # AND the files appear on disk AFTER the last hook fired
+        container = self.harness.model.unit.get_container("git-sync")
+        container.push(self.prom_alert_filepath, self.free_standing_rule, make_dirs=True)
+        container.push(self.loki_alert_filepath, self.free_standing_rule, make_dirs=True)
+        container.push(self.git_hash_file_path, "hash 012345", make_dirs=True)
 
-            # THEN after update status app relation data gets updated
-            self.harness.charm.on.update_status.emit()
-            relation = self.harness.charm.model.get_relation(rel_name)
-            assert relation is not None
-            rel_data = relation.data[self.harness.charm.app]
-            self.assertNotEqual(rel_data["alert_rules"], "{}")
+        # THEN after update status app relation data gets updated
+        self.harness.charm.on.update_status.emit()
+        relation = self.harness.charm.model.get_relation(rel_name)
+        assert relation is not None
+        rel_data = relation.data[self.harness.charm.app]
+        self.assertNotEqual(rel_data["alert_rules"], "{}")
 
-            # AND the unit goes into active state
-            self.assertIsInstance(self.harness.charm.unit.status, ActiveStatus)
-
-        finally:
-            # cleanup added units to prep for reentry by hypothesis' strategy
-            self.harness.set_leader(False)
-            self.harness.update_config(unset=["git_repo"])
-            if rel_id:
-                self.harness.remove_relation(rel_id)
+        # AND the unit goes into active state
+        self.assertIsInstance(self.harness.charm.unit.status, ActiveStatus)
