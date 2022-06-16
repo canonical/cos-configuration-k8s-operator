@@ -73,8 +73,12 @@ class COSConfigCharm(CharmBase):
         # Using model.storages is tricky because it only works after storage-attached event
         # (otherwise: IndexError: list index out of range), which complicates things.
         # So hard-coding the path to circumvent that.
-        self._git_sync_mount_point = self.model.storages["content-from-git"][0].location
         # self._git_sync_mount_point = "/var/lib/juju/storage/content-from-git/0"
+        if len(self.model.storages["content-from-git"]) == 0:
+            # Storage isn't available yet. Since storage becomes available early enough, no need
+            # to observe storage-attached and complicate things; simply abort until it is ready.
+            return
+        self._git_sync_mount_point = self.model.storages["content-from-git"][0].location
         self._repo_path = os.path.join(self._git_sync_mount_point, self.SUBDIR)
 
         self.container = self.unit.get_container(self._container_name)
