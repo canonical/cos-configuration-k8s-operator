@@ -67,8 +67,14 @@ class COSConfigCharm(CharmBase):
     def __init__(self, *args):
         super().__init__(*args)
 
-        # path to the repo in the _charm_ container
-        self._git_sync_mount_point = self.model.storages["content-from-git"][0].location
+        # Path to the repo in the _charm_ container, which is needed for instantiating
+        # PrometheusRulesProvider with the rule files (otherwise would need to fetch via pebble
+        # every time).
+        # Using model.storages is tricky because it only works after storage-attached event
+        # (otherwise: IndexError: list index out of range), which complicates things.
+        # So hard-coding the path to circumvent that.
+        # self._git_sync_mount_point = self.model.storages["content-from-git"][0].location
+        self._git_sync_mount_point = "/var/lib/juju/storage/content-from-git/0"
         self._repo_path = os.path.join(self._git_sync_mount_point, self.SUBDIR)
 
         self.container = self.unit.get_container(self._container_name)
