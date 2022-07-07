@@ -241,7 +241,7 @@ class COSConfigCharm(CharmBase):
         try:
             stdout, stderr = process.wait_output()
         except ExecError as e:
-            raise SyncError(f"Exited with code {e.exit_code}.", e.stderr) from e
+            raise SyncError(f"Exited with code {e.exit_code}.", e.stderr) from e  # type: ignore
         except ChangeError as e:
             raise SyncError(str(e)) from e
 
