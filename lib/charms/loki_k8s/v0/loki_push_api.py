@@ -69,10 +69,10 @@ and three optional arguments.
           def __init__(self, *args):
               super().__init__(*args)
               ...
-              self._provide_loki()
+              self._loki_ready()
               ...
 
-          def _provide_loki(self):
+          def _loki_ready(self):
               try:
                   version = self._loki_server.version
                   self.loki_provider = LokiPushApiProvider(self)
@@ -130,13 +130,36 @@ The `LokiPushApiProvider` object has several responsibilities:
 
 
 Once these alert rules are sent over relation data, the `LokiPushApiProvider` object
-stores these files in the directory `/loki/rules` inside the Loki charm container.
+stores these files in the directory `/loki/rules` inside the Loki charm container. After
+storing alert rules files, the object will check alert rules by querying Loki API
+endpoint: [`loki/api/v1/rules`](https://grafana.com/docs/loki/latest/api/#list-rule-groups).
+If there are changes in the alert rules a `loki_push_api_alert_rules_changed` event will
+be emitted with details about the `RelationEvent` which triggered it.
+
+This events should be observed in the charm that uses `LokiPushApiProvider`:
+
+```python
+    def __init__(self, *args):
+        super().__init__(*args)
+        ...
+        self.loki_provider = LokiPushApiProvider(self)
+        self.framework.observe(
+            self.loki_provider.on.loki_push_api_alert_rules_changed,
+            self._loki_push_api_alert_rules_changed,
+        )
+```
+
 
 ## LokiPushApiConsumer Library Usage
 
 This Loki charm interacts with its clients using the Loki charm library. Charms
 seeking to send log to Loki, must do so using the `LokiPushApiConsumer` object from
 this charm library.
+
+> **NOTE**: `LokiPushApiConsumer` also depends on an additional charm library.
+>
+> Ensure sure you `charmcraft fetch-lib charms.observability_libs.v0.juju_topology`
+> when using this library.
 
 For the simplest use cases, using the `LokiPushApiConsumer` object only requires
 instantiating it, typically in the constructor of your charm (the one which
@@ -190,6 +213,13 @@ self.framework.observe(
 
 The consumer charm can then choose to update its configuration in both situations.
 
+Note that LokiPushApiConsumer does not add any labels automatically on its own. In
+order to better integrate with the Canonical Observability Stack, you may want to configure your
+software to add Juju topology labels. The
+[observability-libs](https://charmhub.io/observability-libs) library can be used to get topology
+labels in charm code. See :func:`LogProxyConsumer._scrape_configs` for an example of how
+to do this with promtail.
+
 ## LogProxyConsumer Library Usage
 
 Let's say that we have a workload charm that produces logs and we need to send those logs to a
@@ -204,7 +234,7 @@ Adopting this object in a Charmed Operator consist of two steps:
    For example:
 
    ```python
-   from charms.loki_k8s.v0.log_proxy import LogProxyConsumer
+   from charms.loki_k8s.v0.loki_push_api import LogProxyConsumer
 
    ...
 
@@ -215,13 +245,13 @@ Adopting this object in a Charmed Operator consist of two steps:
            )
 
            self.framework.observe(
-               self._loki_consumer.on.promtail_digest_error,
+               self._log_proxy.on.promtail_digest_error,
                self._promtail_error,
            )
 
-           def _promtail_error(self, event):
-               logger.error(msg)
-               self.unit.status = BlockedStatus(event.message)
+       def _promtail_error(self, event):
+           logger.error(event.message)
+           self.unit.status = BlockedStatus(event.message)
    ```
 
    Any time the relation between a provider charm and a LogProxy consumer charm is
@@ -269,10 +299,10 @@ Adopting this object in a Charmed Operator consist of two steps:
 
 2. Modify the `metadata.yaml` file to add:
 
-   - The `log_proxy` relation in the `requires` section:
+   - The `log-proxy` relation in the `requires` section:
      ```yaml
      requires:
-       log_proxy:
+       log-proxy:
          interface: loki_push_api
          optional: true
      ```
@@ -291,7 +321,7 @@ resources:
   promtail-bin:
       type: file
       description: Promtail binary for logging
-      filename: promtail-linux-amd64
+      filename: promtail-linux
 ```
 
 Which would then allow operators to deploy the charm this way:
@@ -301,6 +331,9 @@ juju deploy \
     ./your_charm.charm \
     --resource promtail-bin=/tmp/promtail-linux-amd64
 ```
+
+If a different resource name is used, it can be specified with the `promtail_resource_name`
+argument to the `LogProxyConsumer` constructor.
 
 The object can emit a `PromtailDigestError` event:
 
@@ -410,29 +443,38 @@ key.
 import json
 import logging
 import os
-from collections import OrderedDict
+import platform
+import re
+import socket
+import subprocess
+import tempfile
+import typing
+import uuid
 from copy import deepcopy
+from gzip import GzipFile
 from hashlib import sha256
 from io import BytesIO
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple, Union, cast
+from urllib import request
 from urllib.error import HTTPError
-from urllib.request import urlopen
-from zipfile import ZipFile
 
 import yaml
+from charms.observability_libs.v0.juju_topology import JujuTopology
 from ops.charm import (
     CharmBase,
     HookEvent,
+    RelationBrokenEvent,
     RelationCreatedEvent,
     RelationDepartedEvent,
     RelationEvent,
+    RelationJoinedEvent,
     RelationRole,
     WorkloadEvent,
 )
 from ops.framework import EventBase, EventSource, Object, ObjectEvents
 from ops.model import Container, ModelError, Relation
-from ops.pebble import APIError, PathError, ProtocolError
+from ops.pebble import APIError, ChangeError, PathError, ProtocolError
 
 # The unique Charmhub library identifier, never change it
 LIBID = "bf76f23cdd03464b877c52bd1d2f563e"
@@ -442,7 +484,7 @@ LIBAPI = 0
 
 # Increment this PATCH version before using `charmcraft publish-lib` or reset
 # to 0 if you are raising the major API version
-LIBPATCH = 9
+LIBPATCH = 12
 
 logger = logging.getLogger(__name__)
 
@@ -451,24 +493,24 @@ DEFAULT_RELATION_NAME = "logging"
 DEFAULT_ALERT_RULES_RELATIVE_PATH = "./src/loki_alert_rules"
 DEFAULT_LOG_PROXY_RELATION_NAME = "log-proxy"
 
-PROMTAIL_BINARY_ZIP_URL = (
-    "https://github.com/grafana/loki/releases/download/v2.4.1/promtail-linux-amd64.zip"
-)
-
+PROMTAIL_BASE_URL = "https://github.com/canonical/loki-k8s-operator/releases/download"
+# To update Promtail version you only need to change the PROMTAIL_VERSION and
+# update all sha256 sums in PROMTAIL_BINARIES. To support a new architecture
+# you only need to add a new key value pair for the architecture in PROMTAIL_BINARIES.
+PROMTAIL_VERSION = "v2.5.0"
+PROMTAIL_BINARIES = {
+    "amd64": {
+        "filename": "promtail-static-amd64",
+        "zipsha": "543e333b0184e14015a42c3c9e9e66d2464aaa66eca48b29e185a6a18f67ab6d",
+        "binsha": "17e2e271e65f793a9fbe81eab887b941e9d680abe82d5a0602888c50f5e0cac9",
+    },
+}
 
 # Paths in `charm` container
 BINARY_DIR = "/tmp"
-BINARY_ZIP_FILE_NAME = "promtail-linux-amd64.zip"
-BINARY_ZIP_PATH = "{}/{}".format(BINARY_DIR, BINARY_ZIP_FILE_NAME)
-BINARY_FILE_NAME = "promtail-linux-amd64"
-BINARY_PATH = "{}/{}".format(BINARY_DIR, BINARY_FILE_NAME)
-BINARY_ZIP_SHA256SUM = "978391a174e71cfef444ab9dc012f95d5d7eae0d682eaf1da2ea18f793452031"
-BINARY_SHA256SUM = "00ed6a4b899698abc97d471c483a6a7e7c95e761714f872eb8d6ffd45f3d32e6"
 
 # Paths in `workload` container
 WORKLOAD_BINARY_DIR = "/opt/promtail"
-WORKLOAD_BINARY_FILE_NAME = "promtail-linux-amd64"
-WORKLOAD_BINARY_PATH = "{}/{}".format(WORKLOAD_BINARY_DIR, WORKLOAD_BINARY_FILE_NAME)
 WORKLOAD_CONFIG_DIR = "/etc/promtail"
 WORKLOAD_CONFIG_FILE_NAME = "promtail_config.yaml"
 WORKLOAD_CONFIG_PATH = "{}/{}".format(WORKLOAD_CONFIG_DIR, WORKLOAD_CONFIG_FILE_NAME)
@@ -583,201 +625,6 @@ def _validate_relation_by_interface_and_direction(
         raise Exception("Unexpected RelationDirection: {}".format(expected_relation_role))
 
 
-class JujuTopology:
-    """Class for storing and formatting juju topology information."""
-
-    STUB = "%%juju_topology%%"
-
-    def __new__(cls, *args, **kwargs):
-        """Reject instantiation of a base JujuTopology class. Children only."""
-        if cls is JujuTopology:
-            raise TypeError("only children of '{}' may be instantiated".format(cls.__name__))
-        return object.__new__(cls)
-
-    def __init__(
-        self,
-        model: str,
-        model_uuid: str,
-        application: str,
-        unit: Optional[str] = "",
-        charm_name: Optional[str] = "",
-    ):
-        """Build a JujuTopology object.
-
-        A `JujuTopology` object is used for storing and transforming
-        Juju Topology information. This information is used to
-        annotate Prometheus scrape jobs and alert rules. Such
-        annotation when applied to scrape jobs helps in identifying
-        the source of the scrapped metrics. On the other hand when
-        applied to alert rules topology information ensures that
-        evaluation of alert expressions is restricted to the source
-        (charm) from which the alert rules were obtained.
-
-        Args:
-            model: a string name of the Juju model
-            model_uuid: a globally unique string identifier for the Juju model
-            application: an application name as a string
-            unit: a unit name as a string
-            charm_name: name of charm as a string
-        """
-        self.model = model
-        self.model_uuid = model_uuid
-        self.application = application
-        self.charm_name = charm_name
-        self.unit = unit
-
-    @classmethod
-    def from_charm(cls, charm) -> "JujuTopology":
-        """Factory method for creating `JujuTopology` children from a given charm.
-
-        Args:
-            charm: a `CharmBase` object for which the `JujuTopology` has to be constructed
-
-        Returns:
-            a `JujuTopology` object.
-        """
-        return cls(
-            model=charm.model.name,
-            model_uuid=charm.model.uuid,
-            application=charm.model.app.name,
-            unit=charm.model.unit.name,
-            charm_name=charm.meta.name,
-        )
-
-    @classmethod
-    def from_relation_data(cls, data: dict) -> "JujuTopology":
-        """Factory method for creating `JujuTopology` children from a dictionary.
-
-        Args:
-            data: a dictionary with four keys providing topology information. The keys are
-                - "model"
-                - "model_uuid"
-                - "application"
-                - "unit"
-                - "charm_name"
-                `unit` and `charm_name` may be empty, but will result in more limited
-                labels. However, this allows us to support payload-only charms.
-
-        Returns:
-            a `JujuTopology` object.
-        """
-        return cls(
-            model=data["model"],
-            model_uuid=data["model_uuid"],
-            application=data["application"],
-            unit=data.get("unit", ""),
-            charm_name=data.get("charm_name", ""),
-        )
-
-    @property
-    def identifier(self) -> str:
-        """Format the topology information into a terse string."""
-        # This is odd, but may have `None` as a model key
-        return "_".join([str(val) for val in self.as_dict().values()]).replace("/", "_")
-
-    @property
-    def promql_labels(self) -> str:
-        """Format the topology information into a verbose string."""
-        return ", ".join(
-            [
-                'juju_{}="{}"'.format(key, value)
-                for key, value in self.as_dict(rename_keys={"charm_name": "charm"}).items()
-            ]
-        )
-
-    def as_dict(self, rename_keys: Optional[Dict[str, str]] = None) -> OrderedDict:
-        """Format the topology information into a dict.
-
-        Use an OrderedDict so we can rely on the insertion order on Python 3.5 (and 3.6,
-        which still does not guarantee it).
-
-        Args:
-            rename_keys: A dictionary mapping old key names to new key names, which will
-                be substituted when invoked.
-        """
-        ret = OrderedDict(
-            [
-                ("model", self.model),
-                ("model_uuid", self.model_uuid),
-                ("application", self.application),
-                ("unit", self.unit),
-                ("charm_name", self.charm_name),
-            ]
-        )
-
-        ret["unit"] or ret.pop("unit")
-        ret["charm_name"] or ret.pop("charm_name")
-
-        # If a key exists in `rename_keys`, replace the value
-        if rename_keys:
-            ret = OrderedDict(
-                (rename_keys.get(k), v) if rename_keys.get(k) else (k, v) for k, v in ret.items()  # type: ignore
-            )
-
-        return ret
-
-    def as_promql_label_dict(self) -> dict:
-        """Format the topology information into a dict with keys having 'juju_' as prefix."""
-        vals = {
-            "juju_{}".format(key): val
-            for key, val in self.as_dict(rename_keys={"charm_name": "charm"}).items()
-        }
-
-        return vals
-
-    def render(self, template: str) -> str:
-        """Render a juju-topology template string with topology info."""
-        return template.replace(JujuTopology.STUB, self.promql_labels)
-
-
-class AggregatorTopology(JujuTopology):
-    """Class for initializing topology information for MetricsEndpointAggregator."""
-
-    @classmethod
-    def create(
-        cls, model: str, model_uuid: str, application: str, unit: str
-    ) -> "AggregatorTopology":
-        """Factory method for creating the `AggregatorTopology` dataclass from a given charm.
-
-        Args:
-            model: a string representing the model
-            model_uuid: the model UUID as a string
-            application: the application name
-            unit: the unit name
-
-        Returns:
-            a `AggregatorTopology` object.
-        """
-        return cls(
-            model=model,
-            model_uuid=model_uuid,
-            application=application,
-            unit=unit,
-        )
-
-    def as_promql_label_dict(self) -> dict:
-        """Format the topology information into a dict with keys having 'juju_' as prefix."""
-        vals = {"juju_{}".format(key): val for key, val in self.as_dict().items()}
-
-        # FIXME: Why is this different? I have no idea. The uuid length should be the same
-        vals["juju_model_uuid"] = vals["juju_model_uuid"][:7]
-
-        return vals
-
-
-class ProviderTopology(JujuTopology):
-    """Class for initializing topology information for MetricsEndpointProvider."""
-
-    @property
-    def scrape_identifier(self) -> str:
-        """Format the topology information into a scrape identifier."""
-        # This is used only by Metrics[Consumer|Provider] and does not need a
-        # unit name, so only check for the charm name
-        return "juju_{}_prometheus_scrape".format(
-            "_".join([self.model, self.model_uuid[:7], self.application, self.charm_name])  # type: ignore
-        )
-
-
 class InvalidAlertRulePathError(Exception):
     """Raised if the alert rules folder cannot be found or is otherwise invalid."""
 
@@ -863,6 +710,7 @@ class AlertRules:
             topology: a `JujuTopology` instance that is used to annotate all alert rules.
         """
         self.topology = topology
+        self.tool = CosTool(None)
         self.alert_groups = []  # type: List[dict]
 
     def _from_file(self, root_path: Path, file_path: Path) -> List[dict]:
@@ -879,7 +727,7 @@ class AlertRules:
         with file_path.open() as rf:
             # Load a list of rules from file then add labels and filters
             try:
-                rule_file = yaml.safe_load(rf)
+                rule_file = yaml.safe_load(rf) or {}
 
             except Exception as e:
                 logger.error("Failed to read alert rules from %s: %s", file_path.name, e)
@@ -893,7 +741,8 @@ class AlertRules:
                 alert_groups = [{"name": file_path.stem, "rules": [rule_file]}]
             else:
                 # invalid/unsupported
-                logger.error("Invalid rules file: %s", file_path.name)
+                reason = "file is empty" if not rule_file else "unexpected file structure"
+                logger.error("Invalid rules file (%s): %s", reason, file_path.name)
                 return []
 
             # update rules with additional metadata
@@ -911,13 +760,24 @@ class AlertRules:
                         alert_rule["labels"] = {}
 
                     if self.topology:
-                        alert_rule["labels"].update(self.topology.as_promql_label_dict())
+                        alert_rule["labels"].update(self.topology.label_matcher_dict)
                         # insert juju topology filters into a prometheus alert rule
-                        alert_rule["expr"] = self.topology.render(alert_rule["expr"])
+                        # logql doesn't like empty matchers, so add a job matcher which hits
+                        # any string as a "wildcard" which the topology labels will
+                        # filter down
+                        alert_rule["expr"] = self.tool.inject_label_matchers(
+                            re.sub(r"%%juju_topology%%", r'job=".+"', alert_rule["expr"]),
+                            self.topology.label_matcher_dict,
+                        )
 
             return alert_groups
 
-    def _group_name(self, root_path: str, file_path: str, group_name: str) -> str:
+    def _group_name(
+        self,
+        root_path: typing.Union[Path, str],
+        file_path: typing.Union[Path, str],
+        group_name: str,
+    ) -> str:
         """Generate group name from path and topology.
 
         The group name is made up of the relative path between the root dir_path, the file path,
@@ -931,16 +791,58 @@ class AlertRules:
         Returns:
             New group name, augmented by juju topology and relative path.
         """
-        rel_path = os.path.relpath(os.path.dirname(file_path), root_path)
-        rel_path = "" if rel_path == "." else rel_path.replace(os.path.sep, "_")
+        file_path = Path(file_path) if not isinstance(file_path, Path) else file_path
+        root_path = Path(root_path) if not isinstance(root_path, Path) else root_path
+        rel_path = file_path.parent.relative_to(root_path.as_posix())
+
+        # We should account for both absolute paths and Windows paths. Convert it to a POSIX
+        # string, strip off any leading /, then join it
+
+        path_str = ""
+        if not rel_path == Path("."):
+            # Get rid of leading / and optionally drive letters so they don't muck up
+            # the template later, since Path.parts returns them. The 'if relpath.is_absolute ...'
+            # isn't even needed since re.sub doesn't throw exceptions if it doesn't match, so it's
+            # optional, but it makes it clear what we're doing.
+
+            # Note that Path doesn't actually care whether the path is valid just to instantiate
+            # the object, so we can happily strip that stuff out to make templating nicer
+            rel_path = Path(
+                re.sub(r"^([A-Za-z]+:)?/", "", rel_path.as_posix())
+                if rel_path.is_absolute()
+                else str(rel_path)
+            )
+
+            # Get rid of relative path characters in the middle which both os.path and pathlib
+            # leave hanging around. We could use path.resolve(), but that would lead to very
+            # long template strings when rules come from pods and/or other deeply nested charm
+            # paths
+            path_str = "_".join(filter(lambda x: x not in ["..", "/"], rel_path.parts))
 
         # Generate group name:
         #  - name, from juju topology
         #  - suffix, from the relative path of the rule file;
         group_name_parts = [self.topology.identifier] if self.topology else []
-        group_name_parts.extend([rel_path, group_name, "alerts"])
+        group_name_parts.extend([path_str, group_name, "alerts"])
         # filter to remove empty strings
-        return "_".join(filter(None, group_name_parts))
+        return "_".join(filter(lambda x: x, group_name_parts))
+
+    @classmethod
+    def _multi_suffix_glob(
+        cls, dir_path: Path, suffixes: List[str], recursive: bool = True
+    ) -> list:
+        """Helper function for getting all files in a directory that have a matching suffix.
+
+        Args:
+            dir_path: path to the directory to glob from.
+            suffixes: list of suffixes to include in the glob (items should begin with a period).
+            recursive: a flag indicating whether a glob is recursive (nested) or not.
+
+        Returns:
+            List of files in `dir_path` that have one of the suffixes specified in `suffixes`.
+        """
+        all_files_in_dir = dir_path.glob("**/*" if recursive else "*")
+        return list(filter(lambda f: f.is_file() and f.suffix in suffixes, all_files_in_dir))
 
     def _from_dir(self, dir_path: Path, recursive: bool) -> List[dict]:
         """Read all rule files in a directory.
@@ -960,8 +862,7 @@ class AlertRules:
         alert_groups = []  # type: List[dict]
 
         # Gather all alerts into a list of groups
-        paths = dir_path.glob("**/*.rule" if recursive else "*.rule")
-        for file_path in filter(Path.is_file, paths):
+        for file_path in self._multi_suffix_glob(dir_path, [".rule", ".rules"], recursive):
             alert_groups_from_file = self._from_file(dir_path, file_path)
             if alert_groups_from_file:
                 logger.debug("Reading alert rule from %s", file_path)
@@ -988,7 +889,7 @@ class AlertRules:
         elif path.is_file():
             self.alert_groups.extend(self._from_file(path.parent, path))
         else:
-            logger.warning("path does not exist: %s", path)
+            logger.debug("The alerts file does not exist: %s", path)
 
     def as_dict(self) -> dict:
         """Return standard alert rules file in dict representation.
@@ -1062,21 +963,6 @@ class MultipleRelationsWithInterfaceFoundError(Exception):
         super().__init__(self.message)
 
 
-class RelationManagerBase(Object):
-    """Base class that represents relation ends ("provides" and "requires").
-
-    :class:`RelationManagerBase` is used to create a relation manager. This is done by inheriting
-    from :class:`RelationManagerBase` and customising the sub class as required.
-
-    Attributes:
-        name (str): consumer's relation name
-    """
-
-    def __init__(self, charm: CharmBase, relation_name):
-        super().__init__(charm, relation_name)
-        self.name = relation_name
-
-
 class LokiPushApiEndpointDeparted(EventBase):
     """Event emitted when Loki departed."""
 
@@ -1085,23 +971,102 @@ class LokiPushApiEndpointJoined(EventBase):
     """Event emitted when Loki joined."""
 
 
+class LokiPushApiAlertRulesChanged(EventBase):
+    """Event emitted if there is a change in the alert rules."""
+
+    def __init__(self, handle, relation, relation_id, app=None, unit=None):
+        """Pretend we are almost like a RelationEvent.
+
+        Fields to serialize:
+            {
+                "relation_name": <a relation name as a string>,
+                "relation_id": <a relation id, optional>,
+                "app_name": <app name as a string>,
+                "unit_name": <unit name as a string>
+            }
+
+        In this way, we can transparently use `RelationEvent.snapshot()` to pass
+        it back if we need to log it.
+        """
+        super().__init__(handle)
+        self.relation = relation
+        self.relation_id = relation_id
+        self.app = app
+        self.unit = unit
+
+    def snapshot(self) -> Dict:
+        """Save event information."""
+        snapshot = {"relation_name": self.relation.name, "relation_id": self.relation.id}
+        if self.app:
+            snapshot["app_name"] = self.app.name
+        if self.unit:
+            snapshot["unit_name"] = self.unit.name
+        return snapshot
+
+    def restore(self, snapshot: dict):
+        """Restore event information."""
+        self.relation = self.framework.model.get_relation(
+            snapshot["relation_name"], snapshot["relation_id"]
+        )
+        app_name = snapshot.get("app_name")
+        if app_name:
+            self.app = self.framework.model.get_app(app_name)
+        else:
+            self.app = None
+        unit_name = snapshot.get("unit_name")
+        if unit_name:
+            self.unit = self.framework.model.get_unit(unit_name)
+        else:
+            self.unit = None
+
+
+class InvalidAlertRuleEvent(EventBase):
+    """Event emitted when alert rule files are not parsable.
+
+    Enables us to set a clear status on the provider.
+    """
+
+    def __init__(self, handle, errors: str = "", valid: bool = False):
+        super().__init__(handle)
+        self.errors = errors
+        self.valid = valid
+
+    def snapshot(self) -> Dict:
+        """Save alert rule information."""
+        return {
+            "valid": self.valid,
+            "errors": self.errors,
+        }
+
+    def restore(self, snapshot):
+        """Restore alert rule information."""
+        self.valid = snapshot["valid"]
+        self.errors = snapshot["errors"]
+
+
 class LokiPushApiEvents(ObjectEvents):
     """Event descriptor for events raised by `LokiPushApiProvider`."""
 
     loki_push_api_endpoint_departed = EventSource(LokiPushApiEndpointDeparted)
     loki_push_api_endpoint_joined = EventSource(LokiPushApiEndpointJoined)
+    loki_push_api_alert_rules_changed = EventSource(LokiPushApiAlertRulesChanged)
+    alert_rule_status_changed = EventSource(InvalidAlertRuleEvent)
 
 
-class LokiPushApiProvider(RelationManagerBase):
+class LokiPushApiProvider(Object):
     """A LokiPushApiProvider class."""
+
+    on = LokiPushApiEvents()
 
     def __init__(
         self,
         charm,
         relation_name: str = DEFAULT_RELATION_NAME,
         *,
-        port: int = 3100,
-        rules_dir="/loki/rules",
+        port: Union[str, int] = 3100,
+        scheme: str = "http",
+        address: str = "localhost",
+        path: str = "loki/api/v1/push",
     ):
         """A Loki service provider.
 
@@ -1113,8 +1078,6 @@ class LokiPushApiProvider(RelationManagerBase):
                 It is strongly advised not to change the default, so that people
                 deploying your charm will have a consistent experience with all
                 other charms that consume metrics endpoints.
-
-            rules_dir: path in workload container where rule files are to be stored.
 
         Raises:
             RelationNotFoundError: If there is no relation in the charm's metadata.yaml
@@ -1132,26 +1095,47 @@ class LokiPushApiProvider(RelationManagerBase):
         super().__init__(charm, relation_name)
         self._charm = charm
         self._relation_name = relation_name
-        self.port = port
+        self._tool = CosTool(self)
+        self.port = int(port)
         self.container = self._charm._container
-
-        # If Loki is run in single-tenant mode, all the chunks are put in a folder named "fake"
-        # https://grafana.com/docs/loki/latest/operations/storage/filesystem/
-        # https://grafana.com/docs/loki/latest/rules/#ruler-storage
-        tenant_id = "fake"
-        self._rules_dir = os.path.join(rules_dir, tenant_id)
-        # create tenant dir so that the /loki/api/v1/rules endpoint returns "no rule groups found"
-        # instead of "unable to read rule dir /loki/rules/fake: no such file or directory"
-        if self.container.can_connect():
-            try:
-                self.container.make_dir(self._rules_dir, make_parents=True)
-            except (FileNotFoundError, ProtocolError, PathError):
-                logger.debug("Could not create loki directory.")
+        self.scheme = scheme
+        self.address = address
+        self.path = path
 
         events = self._charm.on[relation_name]
-        self.framework.observe(self._charm.on.upgrade_charm, self._on_logging_relation_changed)
+        self.framework.observe(self._charm.on.upgrade_charm, self._on_lifecycle_event)
+        self.framework.observe(events.relation_joined, self._on_logging_relation_joined)
         self.framework.observe(events.relation_changed, self._on_logging_relation_changed)
         self.framework.observe(events.relation_departed, self._on_logging_relation_departed)
+        self.framework.observe(events.relation_broken, self._on_logging_relation_broken)
+
+    def _on_lifecycle_event(self, _):
+        # Upgrade event or other charm-level event
+        should_update = False
+        for relation in self._charm.model.relations[self._relation_name]:
+            # Don't accidentally flip a True result back.
+            should_update = should_update or self._process_logging_relation_changed(relation)
+        if should_update:
+            # We don't have a RelationEvent, so build it up by hand
+            first_rel = self._charm.model.relations[self._relation_name][0]
+            self.on.loki_push_api_alert_rules_changed.emit(
+                relation=first_rel,
+                relation_id=first_rel.id,
+            )
+
+    def _on_logging_relation_joined(self, event: RelationJoinedEvent):
+        """Set basic data on relation joins.
+
+        Set the promtail binary URL location, which will not change, and anything
+        else which may be required, but is static..
+
+        Args:
+            event: a `CharmEvent` in response to which the consumer
+                charm must set its relation data.
+        """
+        if self._charm.unit.is_leader():
+            event.relation.data[self._charm.app].update(self._promtail_binary_url)
+            logger.debug("Saved promtail binary url: %s", self._promtail_binary_url)
 
     def _on_logging_relation_changed(self, event: HookEvent):
         """Handle changes in related consumers.
@@ -1163,48 +1147,27 @@ class LokiPushApiProvider(RelationManagerBase):
             event: a `CharmEvent` in response to which the consumer
                 charm must update its relation data.
         """
-        if isinstance(event, RelationEvent):
-            self._process_logging_relation_changed(event.relation)
-        else:
-            # Upgrade event or other charm-level event
-            for relation in self._charm.model.relations[self._relation_name]:
-                self._process_logging_relation_changed(relation)
+        should_update = self._process_logging_relation_changed(event.relation)
+        if should_update:
+            self.on.loki_push_api_alert_rules_changed.emit(
+                relation=event.relation,
+                relation_id=event.relation.id,
+                app=self._charm.app,
+                unit=self._charm.unit,
+            )
 
-    def _process_logging_relation_changed(self, relation: Relation):
-        """Handle changes in related consumers.
-
-        Anytime there are changes in relations between Loki
-        and its consumers charms, Loki set the `loki_push_api`
-        into the relation data.
-        Besides Loki generates alert rules files based what
-        consumer charms forwards,
+    def _on_logging_relation_broken(self, event: RelationBrokenEvent):
+        """Removes alert rules files when consumer charms left the relation with Loki.
 
         Args:
-            relation: the `Relation` instance to update.
+            event: a `CharmEvent` in response to which the Loki
+                charm must update its relation data.
         """
-        if self._charm.unit.is_leader():
-            relation.data[self._charm.app].update(self._promtail_binary_url)
-            logger.debug("Saved promtail binary url: %s", self._promtail_binary_url)
-            relation.data[self._charm.app]["endpoints"] = json.dumps(self._endpoints())
-            logger.debug("Saved endpoints in relation data")
-
-        if relation.data.get(relation.app).get("alert_rules"):
-            logger.debug("Saved alerts rules to disk")
-            self._remove_alert_rules_files(self.container)
-            self._generate_alert_rules_files(self.container)
-
-    def _endpoints(self) -> List[dict]:
-        """Return a list of Loki Push Api endpoints."""
-        return [{"url": self._url(unit_number=i)} for i in range(self._charm.app.planned_units())]
-
-    def _url(self, unit_number) -> str:
-        """Get the url for a given unit."""
-        return "http://{}-{}.{}-endpoints.{}.svc.cluster.local:{}/loki/api/v1/push".format(
-            self._charm.app.name,
-            unit_number,
-            self._charm.app.name,
-            self._charm.model.name,
-            self.port,
+        self.on.loki_push_api_alert_rules_changed.emit(
+            relation=event.relation,
+            relation_id=event.relation.id,
+            app=self._charm.app,
+            unit=self._charm.unit,
         )
 
     def _on_logging_relation_departed(self, event: RelationDepartedEvent):
@@ -1214,49 +1177,103 @@ class LokiPushApiProvider(RelationManagerBase):
             event: a `CharmEvent` in response to which the Loki
                 charm must update its relation data.
         """
-        if event.relation.data.get(event.relation.app):
-            self._remove_alert_rules_files(self.container)
+        self.on.loki_push_api_alert_rules_changed.emit(
+            relation=event.relation,
+            relation_id=event.relation.id,
+            app=self._charm.app,
+            unit=self._charm.unit,
+        )
+
+    def _should_update_alert_rules(self, relation) -> bool:
+        """Determine whether alert rules should be regenerated.
+
+        If there are alert rules in the relation data bag, tell the charm
+        whether or not to regenerate them based on the boolean returned here.
+        """
+        if relation.data.get(relation.app).get("alert_rules", None) is not None:
+            return True
+        return False
+
+    def _process_logging_relation_changed(self, relation: Relation) -> bool:
+        """Handle changes in related consumers.
+
+        Anytime there are changes in relations between Loki
+        and its consumers charms, Loki set the `loki_push_api`
+        into the relation data. Set the endpoint building
+        appropriately, and if there are alert rules present in
+        the relation, let the caller know.
+        Besides Loki generates alert rules files based what
+        consumer charms forwards,
+
+        Args:
+            relation: the `Relation` instance to update.
+
+        Returns:
+            A boolean indicating whether an event should be emitted so we
+            only emit one on lifecycle events
+        """
+        relation.data[self._charm.unit]["public_address"] = socket.getfqdn() or ""
+        self.update_endpoint(relation=relation)
+        return self._should_update_alert_rules(relation)
 
     @property
     def _promtail_binary_url(self) -> dict:
         """URL from which Promtail binary can be downloaded."""
-        return {"promtail_binary_zip_url": PROMTAIL_BINARY_ZIP_URL}
+        # construct promtail binary url paths from parts
+        promtail_binaries = {}
+        for arch, info in PROMTAIL_BINARIES.items():
+            info["url"] = "{}/promtail-{}/{}.gz".format(
+                PROMTAIL_BASE_URL, PROMTAIL_VERSION, info["filename"]
+            )
+            promtail_binaries[arch] = info
+
+        return {"promtail_binary_zip_url": json.dumps(promtail_binaries)}
+
+    def update_endpoint(self, url: str = None, relation: Relation = None) -> None:
+        """Triggers programmatically the update of endpoint in unit relation data.
+
+        This method should be used when the charm relying on this library needs
+        to update the relation data in response to something occurring outside
+        of the `logging` relation lifecycle, e.g., in case of a
+        host address change because the charmed operator becomes connected to an
+        Ingress after the `logging` relation is established.
+
+        Args:
+            url: An optional url value to update relation data.
+            relation: An optional instance of `class:ops.model.Relation` to update.
+        """
+        if not relation:
+            if not self._charm.model.get_relation(self._relation_name):
+                return
+
+            relation = self._charm.model.get_relation(self._relation_name)
+
+        endpoint = self._endpoint(url or self._url)
+
+        relation.data[self._charm.unit].update({"endpoint": json.dumps(endpoint)})
+        logger.debug("Saved endpoint in unit relation data")
 
     @property
-    def unit_ip(self) -> str:
-        """Returns unit's IP."""
-        bind_address = self._charm.model.get_binding(self._relation_name).network.bind_address
+    def _url(self) -> str:
+        """Get local Loki Push API url.
 
-        if bind_address:
-            return str(bind_address)
-        return ""
+        Return url to loki, including port number, but without the endpoint subpath.
+        """
+        return "http://{}:{}".format(socket.getfqdn(), self.port)
 
-    def _remove_alert_rules_files(self, container: Container) -> None:
-        """Remove alert rules files from workload container.
+    def _endpoint(self, url) -> dict:
+        """Get Loki push API endpoint for a given url.
 
         Args:
-            container: Container which has alert rules files to be deleted
+            url: A loki unit URL.
+
+        Returns: str
         """
-        container.remove_path(self._rules_dir, recursive=True)
-        logger.debug("Previous Alert rules files deleted")
-        # Since container.remove_path deletes the directory itself with its files
-        # we should create it again.
-        os.makedirs(self._rules_dir, exist_ok=True)
+        endpoint = "/loki/api/v1/push"
+        return {"url": url.rstrip("/") + endpoint}
 
-    def _generate_alert_rules_files(self, container: Container) -> None:
-        """Generate and upload alert rules files.
-
-        Args:
-            container: Container into which alert rules files are going to be uploaded
-        """
-        for identifier, alert_rules in self.alerts().items():
-            filename = "{}_alert.rules".format(identifier)
-            path = os.path.join(self._rules_dir, filename)
-            rules = yaml.dump({"groups": alert_rules["groups"]})
-            container.push(path, rules, make_dirs=True)
-            logger.debug("Updated alert rules file %s", filename)
-
-    def alerts(self) -> dict:
+    @property
+    def alerts(self) -> dict:  # noqa: C901
         """Fetch alerts for all relations.
 
         A Loki alert rules file consists of a list of "groups". Each
@@ -1297,12 +1314,20 @@ class LokiPushApiProvider(RelationManagerBase):
             if not alert_rules:
                 continue
 
+            errors = []
             try:
                 # NOTE: this `metadata` key SHOULD NOT be changed to `scrape_metadata`
-                # to align with Prometheus without careful consideration
+                # to align with Prometheus without careful consideration'
                 metadata = json.loads(relation.data[relation.app]["metadata"])
-                identifier = ProviderTopology.from_relation_data(metadata).identifier
-                alerts[identifier] = alert_rules
+                identifier = JujuTopology.from_dict(metadata).identifier
+                labeled_alerts = self._tool.apply_label_matchers(alert_rules)
+
+                _, errmsg = self._tool.validate_alert_rules(alert_rules)
+                if errmsg:
+                    errors.append(errmsg)
+                    continue
+
+                alerts[identifier] = labeled_alerts
             except KeyError as e:
                 logger.warning(
                     "Relation %s has no 'metadata': %s",
@@ -1322,14 +1347,22 @@ class LokiPushApiProvider(RelationManagerBase):
                             labels["juju_model_uuid"],
                             labels["juju_application"],
                         )
+
+                        _, errmsg = self._tool.validate_alert_rules(alert_rules)
+                        if errmsg:
+                            errors.append(errmsg)
+                            continue
+
                         alerts[identifier] = alert_rules
                     except KeyError:
                         logger.error("Alert rules were found but no usable labels were present")
+            if errors:
+                relation.data[self._charm.app]["event"] = json.dumps({"errors": "; ".join(errors)})
 
         return alerts
 
 
-class ConsumerBase(RelationManagerBase):
+class ConsumerBase(Object):
     """Consumer's base class."""
 
     def __init__(
@@ -1342,12 +1375,12 @@ class ConsumerBase(RelationManagerBase):
         super().__init__(charm, relation_name)
         self._charm = charm
         self._relation_name = relation_name
-        self.topology = ProviderTopology.from_charm(charm)
+        self.topology = JujuTopology.from_charm(charm)
 
         try:
             alert_rules_path = _resolve_dir_against_charm_path(charm, alert_rules_path)
         except InvalidAlertRulePathError as e:
-            logger.warning(
+            logger.debug(
                 "Invalid Loki alert rules folder at %s: %s",
                 e.alert_rules_absolute_path,
                 e.message,
@@ -1364,14 +1397,37 @@ class ConsumerBase(RelationManagerBase):
         alert_rules.add_path(self._alert_rules_path, recursive=self._recursive)
         alert_rules_as_dict = alert_rules.as_dict()
 
-        # if alert_rules_error_message:
-        #     self.on.loki_push_api_alert_rules_error.emit(alert_rules_error_message)
-
         relation.data[self._charm.app]["metadata"] = json.dumps(self.topology.as_dict())
         relation.data[self._charm.app]["alert_rules"] = json.dumps(
             alert_rules_as_dict,
             sort_keys=True,  # sort, to prevent unnecessary relation_changed events
         )
+
+    @property
+    def loki_endpoints(self) -> List[dict]:
+        """Fetch Loki Push API endpoints sent from LokiPushApiProvider through relation data.
+
+        Returns:
+            A list of dictionaries with Loki Push API endpoints, for instance:
+            [
+                {"url": "http://loki1:3100/loki/api/v1/push"},
+                {"url": "http://loki2:3100/loki/api/v1/push"},
+            ]
+        """
+        endpoints = []  # type: list
+
+        for relation in self._charm.model.relations[self._relation_name]:
+            for unit in relation.units:
+                if unit.app == self._charm.app:
+                    # This is a peer unit
+                    continue
+
+                endpoint = relation.data[unit].get("endpoint")
+                if endpoint:
+                    deserialized_endpoint = json.loads(endpoint)
+                    endpoints.append(deserialized_endpoint)
+
+        return endpoints
 
 
 class LokiPushApiConsumer(ConsumerBase):
@@ -1432,11 +1488,42 @@ class LokiPushApiConsumer(ConsumerBase):
         )
         super().__init__(charm, relation_name, alert_rules_path, recursive)
         events = self._charm.on[relation_name]
-        self.framework.observe(self._charm.on.upgrade_charm, self._on_logging_relation_changed)
+        self.framework.observe(self._charm.on.upgrade_charm, self._on_lifecycle_event)
+        self.framework.observe(events.relation_joined, self._on_logging_relation_joined)
         self.framework.observe(events.relation_changed, self._on_logging_relation_changed)
         self.framework.observe(events.relation_departed, self._on_logging_relation_departed)
 
-    def _on_logging_relation_changed(self, event: HookEvent):
+    def _on_lifecycle_event(self, _: HookEvent):
+        """Update require relation data on charm upgrades and other lifecycle events.
+
+        Args:
+            event: a `CharmEvent` in response to which the consumer
+                charm must update its relation data.
+        """
+        # Upgrade event or other charm-level event
+        self._reinitialize_alert_rules()
+        self.on.loki_push_api_endpoint_joined.emit()
+
+    def _on_logging_relation_joined(self, event: RelationJoinedEvent):
+        """Handle changes in related consumers.
+
+        Update relation data and emit events when a relation is established.
+
+        Args:
+            event: a `CharmEvent` in response to which the consumer
+                charm must update its relation data.
+
+        Emits:
+            loki_push_api_endpoint_joined: Once the relation is established, this event is emitted.
+            loki_push_api_alert_rules_error: This event is emitted when an invalid alert rules
+                file is encountered or if `alert_rules_path` is empty.
+        """
+        # Alert rules will not change over the lifecycle of a charm, and do not need to be
+        # constantly set on every relation_changed event. Leave them here.
+        self._handle_alert_rules(event.relation)
+        self.on.loki_push_api_endpoint_joined.emit()
+
+    def _on_logging_relation_changed(self, event: RelationEvent):
         """Handle changes in related consumers.
 
         Anytime there are changes in the relation between Loki
@@ -1451,12 +1538,19 @@ class LokiPushApiConsumer(ConsumerBase):
             loki_push_api_alert_rules_error: This event is emitted when an invalid alert rules
                 file is encountered or if `alert_rules_path` is empty.
         """
-        if isinstance(event, RelationEvent):
-            self._process_logging_relation_changed(event.relation)
-        else:
-            # Upgrade event or other charm-level event
-            for relation in self._charm.model.relations[self._relation_name]:
-                self._process_logging_relation_changed(relation)
+        if self._charm.unit.is_leader():
+            ev = json.loads(event.relation.data[event.app].get("event", "{}"))
+
+            if ev:
+                valid = bool(ev.get("valid", True))
+                errors = ev.get("errors", "")
+
+                if valid and not errors:
+                    self.on.alert_rule_status_changed.emit(valid=valid)
+                else:
+                    self.on.alert_rule_status_changed.emit(valid=valid, errors=errors)
+
+        self.on.loki_push_api_endpoint_joined.emit()
 
     def _reinitialize_alert_rules(self):
         """Reloads alert rules and updates all relations."""
@@ -1478,26 +1572,24 @@ class LokiPushApiConsumer(ConsumerBase):
         # upgrades and hook failures we might not have data in the storage
         self.on.loki_push_api_endpoint_departed.emit()
 
-    @property
-    def loki_endpoints(self) -> List[dict]:
-        """Fetch Loki Push API endpoints sent from LokiPushApiProvider through relation data.
-
-        Returns:
-            A list with Loki Push API endpoints.
-        """
-        endpoints = []  # type: list
-        for relation in self._charm.model.relations[self._relation_name]:
-            endpoints = endpoints + json.loads(relation.data[relation.app].get("endpoints", "[]"))
-        return endpoints
-
 
 class ContainerNotFoundError(Exception):
-    """Raised if there is no container with the given name or the name is ambiguous."""
+    """Raised if the specified container does not exist."""
+
+    def __init__(self):
+        msg = "The specified container does not exist."
+        self.message = msg
+
+        super().__init__(self.message)
+
+
+class MultipleContainersFoundError(Exception):
+    """Raised if no container name is passed but multiple containers are present."""
 
     def __init__(self):
         msg = (
             "No 'container_name' parameter has been specified; since this Charmed Operator"
-            " is not running exactly one container, it must be specified which container"
+            " is has multiple containers, container_name must be specified for the container"
             " to get logs from."
         )
         self.message = msg
@@ -1506,7 +1598,7 @@ class ContainerNotFoundError(Exception):
 
 
 class PromtailDigestError(EventBase):
-    """Event emitted when there is an error with the Promtail binary file."""
+    """Event emitted when there is an error with Promtail initialization."""
 
     def __init__(self, handle, message):
         super().__init__(handle)
@@ -1549,7 +1641,7 @@ class LogProxyConsumer(ConsumerBase):
 
     Args:
         charm: a `CharmBase` object that manages this `LokiPushApiConsumer` object.
-            Typically this is `self` in the instantiating class.
+            Typically, this is `self` in the instantiating class.
         log_files: a list of log files to monitor with Promtail.
         relation_name: the string name of the relation interface to look up.
             If `charm` has exactly one relation with this interface, the relation's
@@ -1557,14 +1649,16 @@ class LogProxyConsumer(ConsumerBase):
             are found, this method will raise either an exception of type
             NoRelationWithInterfaceFoundError or MultipleRelationsWithInterfaceFoundError,
             respectively.
-        enable_syslog: Whether or not to enable syslog integration.
+        enable_syslog: Whether to enable syslog integration.
         syslog_port: The port syslog is attached to.
         alert_rules_path: an optional path for the location of alert rules
             files. Defaults to "./src/loki_alert_rules",
             resolved from the directory hosting the charm entry file.
             The alert rules are automatically updated on charm upgrade.
-        recursive: Whether or not to scan for rule files recursively.
+        recursive: Whether to scan for rule files recursively.
         container_name: An optional container name to inject the payload into.
+        promtail_resource_name: An optional promtail resource name from metadata
+            if it has been modified and attached
 
     Raises:
         RelationNotFoundError: If there is no relation in the charm's metadata.yaml
@@ -1588,7 +1682,8 @@ class LogProxyConsumer(ConsumerBase):
         syslog_port: int = 1514,
         alert_rules_path: str = DEFAULT_ALERT_RULES_RELATIVE_PATH,
         recursive: bool = False,
-        container_name: Optional[str] = None,
+        container_name: str = "",
+        promtail_resource_name: Optional[str] = None,
     ):
         super().__init__(charm, relation_name, alert_rules_path, recursive)
         self._charm = charm
@@ -1598,28 +1693,34 @@ class LogProxyConsumer(ConsumerBase):
         self._log_files = log_files or []
         self._syslog_port = syslog_port
         self._is_syslog = enable_syslog
-        self.topology = ProviderTopology.from_charm(charm)
+        self.topology = JujuTopology.from_charm(charm)
+        self._promtail_resource_name = promtail_resource_name or "promtail-bin"
+
+        # architechure used for promtail binary
+        arch = platform.processor()
+        self._arch = "amd64" if arch == "x86_64" else arch
 
         events = self._charm.on[relation_name]
         self.framework.observe(events.relation_created, self._on_relation_created)
         self.framework.observe(events.relation_changed, self._on_relation_changed)
         self.framework.observe(events.relation_departed, self._on_relation_departed)
+        # turn the container name to a valid Python identifier
+        snake_case_container_name = self._container_name.replace("-", "_")
         self.framework.observe(
-            getattr(self._charm.on, "{}_pebble_ready".format(self._container_name)),
+            getattr(self._charm.on, "{}_pebble_ready".format(snake_case_container_name)),
             self._on_pebble_ready,
         )
 
     def _on_pebble_ready(self, _: WorkloadEvent):
         """Event handler for `pebble_ready`."""
-        if self.model.relations[self._relation_name] and not self._is_promtail_installed():
+        if self.model.relations[self._relation_name]:
             self._setup_promtail()
 
     def _on_relation_created(self, _: RelationCreatedEvent) -> None:
         """Event handler for `relation_created`."""
         if not self._container.can_connect():
             return
-        if not self._is_promtail_installed():
-            self._setup_promtail()
+        self._setup_promtail()
 
     def _on_relation_changed(self, event: RelationEvent) -> None:
         """Event handler for `relation_changed`.
@@ -1629,16 +1730,38 @@ class LogProxyConsumer(ConsumerBase):
         """
         self._handle_alert_rules(event.relation)
 
+        if self._charm.unit.is_leader():
+            ev = json.loads(event.relation.data[event.app].get("event", "{}"))
+
+            if ev:
+                valid = bool(ev.get("valid", True))
+                errors = ev.get("errors", "")
+
+                if valid and not errors:
+                    self.on.alert_rule_status_changed.emit(valid=valid)
+                else:
+                    self.on.alert_rule_status_changed.emit(valid=valid, errors=errors)
+
         if not self._container.can_connect():
             return
-        if self.model.relations[self._relation_name] and not self._is_promtail_installed():
-            self._setup_promtail()
-        else:
+        if self.model.relations[self._relation_name]:
+            if "promtail" not in self._container.get_plan().services:
+                self._setup_promtail()
+                return
+
             new_config = self._promtail_config
             if new_config != self._current_config:
-                self._container.push(WORKLOAD_CONFIG_PATH, yaml.safe_dump(new_config))
+                self._container.push(
+                    WORKLOAD_CONFIG_PATH, yaml.safe_dump(new_config), make_dirs=True
+                )
+
+            # Loki may send endpoints late. Don't necessarily start, there may be
+            # no clients
+            if new_config["clients"]:
                 self._container.restart(WORKLOAD_SERVICE_NAME)
                 self.on.log_proxy_endpoint_joined.emit()
+            else:
+                self.on.promtail_digest_error.emit("No promtail client endpoints available!")
 
     def _on_relation_departed(self, _: RelationEvent) -> None:
         """Event handler for `relation_departed`.
@@ -1654,7 +1777,7 @@ class LogProxyConsumer(ConsumerBase):
 
         new_config = self._promtail_config
         if new_config != self._current_config:
-            self._container.push(WORKLOAD_CONFIG_PATH, yaml.safe_dump(new_config))
+            self._container.push(WORKLOAD_CONFIG_PATH, yaml.safe_dump(new_config), make_dirs=True)
 
         if new_config["clients"]:
             self._container.restart(WORKLOAD_SERVICE_NAME)
@@ -1662,7 +1785,7 @@ class LogProxyConsumer(ConsumerBase):
             self._container.stop(WORKLOAD_SERVICE_NAME)
         self.on.log_proxy_endpoint_departed.emit()
 
-    def _get_container(self, container_name: Optional[str] = "") -> Container:
+    def _get_container(self, container_name: str = "") -> Container:
         """Gets a single container by name or using the only container running in the Pod.
 
         If there is more than one container in the Pod a `PromtailDigestError` is emitted.
@@ -1671,51 +1794,59 @@ class LogProxyConsumer(ConsumerBase):
             container_name: The container name.
 
         Returns:
-            container: a `ops.model.Container` object representing the container.
+            A `ops.model.Container` object representing the container.
 
-        Raises:
-            ContainerNotFoundError if no container_name was specified
+        Emits:
+            PromtailDigestError, if there was a problem obtaining a container.
         """
-        if container_name:
-            try:
-                return self._charm.unit.get_container(container_name)
-            except ModelError as e:
-                msg = str(e)
-                logger.warning(msg)
-                self.on.promtail_digest_error.emit(msg)
-        else:
-            containers = dict(self._charm.model.unit.containers)
+        try:
+            container_name = self._get_container_name(container_name)
+            return self._charm.unit.get_container(container_name)
+        except (MultipleContainersFoundError, ContainerNotFoundError, ModelError) as e:
+            msg = str(e)
+            logger.warning(msg)
+            self.on.promtail_digest_error.emit(msg)
 
-            if len(containers) == 1:
-                return self._charm.unit.get_container([*containers].pop())
-
-            raise ContainerNotFoundError
-
-    def _get_container_name(self, container_name: Optional[str] = "") -> str:
-        """Gets a container_name.
-
-        If there is more than one container in the Pod a `ContainerNotFoundError` is raised.
+    def _get_container_name(self, container_name: str = None) -> str:
+        """Helper function for getting/validating a container name.
 
         Args:
-            container_name: The container name.
+            container_name: The container name to be validated (optional).
 
         Returns:
-            container_name: a string representing the container_name.
+            container_name: The same container_name that was passed (if it exists) or the only
+            container name that is present (if no container_name was passed).
 
         Raises:
-            ContainerNotFoundError if no container_name was specified
+            ContainerNotFoundError, if container_name does not exist.
+            MultipleContainersFoundError, if container_name was not provided but multiple
+            containers are present.
         """
-        if container_name:
-            return container_name
-
         containers = dict(self._charm.model.unit.containers)
-        if len(containers) == 1:
-            return "".join(list(containers.keys()))
+        if len(containers) == 0:
+            raise ContainerNotFoundError
 
-        raise ContainerNotFoundError
+        if not container_name:
+            # container_name was not provided - will get it ourselves, if it is the only one
+            if len(containers) > 1:
+                raise MultipleContainersFoundError
 
-    def _add_pebble_layer(self) -> None:
-        """Adds Pebble layer that manages Promtail service in Workload container."""
+            # Get the first key in the containers' dict.
+            # Need to "cast", otherwise:
+            # error: Incompatible return value type (got "Optional[str]", expected "str")
+            container_name = cast(str, next(iter(containers.keys())))
+
+        elif container_name not in containers:
+            raise ContainerNotFoundError
+
+        return container_name
+
+    def _add_pebble_layer(self, workload_binary_path: str) -> None:
+        """Adds Pebble layer that manages Promtail service in Workload container.
+
+        Args:
+            workload_binary_path: string providing path to promtail binary in workload container.
+        """
         pebble_layer = {
             "summary": "promtail layer",
             "description": "pebble config layer for promtail",
@@ -1723,7 +1854,7 @@ class LogProxyConsumer(ConsumerBase):
                 WORKLOAD_SERVICE_NAME: {
                     "override": "replace",
                     "summary": WORKLOAD_SERVICE_NAME,
-                    "command": "{} {}".format(WORKLOAD_BINARY_PATH, self._cli_args),
+                    "command": "{} {}".format(workload_binary_path, self._cli_args),
                     "startup": "disabled",
                 }
             },
@@ -1735,29 +1866,48 @@ class LogProxyConsumer(ConsumerBase):
         self._container.make_dir(path=WORKLOAD_BINARY_DIR, make_parents=True)
         self._container.make_dir(path=WORKLOAD_CONFIG_DIR, make_parents=True)
 
-    def _obtain_promtail(self) -> None:
-        """Obtain promtail binary from an attached resource or download it."""
-        if self._is_promtail_attached():
+    def _obtain_promtail(self, promtail_info: dict) -> None:
+        """Obtain promtail binary from an attached resource or download it.
+
+        Args:
+            promtail_info: dictionary containing information about promtail binary
+               that must be used. The dictionary must have three keys
+               - "filename": filename of promtail binary
+               - "zipsha": sha256 sum of zip file of promtail binary
+               - "binsha": sha256 sum of unpacked promtail binary
+        """
+        workload_binary_path = os.path.join(WORKLOAD_BINARY_DIR, promtail_info["filename"])
+        if self._promtail_attached_as_resource:
+            self._push_promtail_if_attached(workload_binary_path)
             return
 
-        if self._promtail_must_be_downloaded():
-            self._download_and_push_promtail_to_workload()
+        if self._promtail_must_be_downloaded(promtail_info):
+            self._download_and_push_promtail_to_workload(promtail_info)
         else:
-            self._push_binary_to_workload()
+            binary_path = os.path.join(BINARY_DIR, promtail_info["filename"])
+            self._push_binary_to_workload(binary_path, workload_binary_path)
 
-    def _push_binary_to_workload(self, resource_path: str = BINARY_PATH) -> None:
-        with open(resource_path, "rb") as f:
-            self._container.push(WORKLOAD_BINARY_PATH, f, permissions=0o755, make_dirs=True)
+    def _push_binary_to_workload(self, binary_path: str, workload_binary_path: str) -> None:
+        """Push promtail binary into workload container.
+
+        Args:
+            binary_path: path in charm container from which promtail binary is read.
+            workload_binary_path: path in workload container to which promtail binary is pushed.
+        """
+        with open(binary_path, "rb") as f:
+            self._container.push(workload_binary_path, f, permissions=0o755, make_dirs=True)
             logger.debug("The promtail binary file has been pushed to the workload container.")
 
-    def _is_promtail_attached(self) -> bool:
+    @property
+    def _promtail_attached_as_resource(self) -> bool:
         """Checks whether Promtail binary is attached to the charm or not.
 
         Returns:
-            a boolean representing whether Promtail binary is attached or not.
+            a boolean representing whether Promtail binary is attached as a resource or not.
         """
         try:
-            resource_path = self._charm.model.resources.fetch("promtail-bin")
+            self._charm.model.resources.fetch(self._promtail_resource_name)
+            return True
         except ModelError:
             return False
         except NameError as e:
@@ -1766,20 +1916,39 @@ class LogProxyConsumer(ConsumerBase):
             else:
                 raise
 
+    def _push_promtail_if_attached(self, workload_binary_path: str) -> bool:
+        """Checks whether Promtail binary is attached to the charm or not.
+
+        Args:
+            workload_binary_path: string specifying expected path of promtail
+                in workload container
+
+        Returns:
+            a boolean representing whether Promtail binary is attached or not.
+        """
         logger.info("Promtail binary file has been obtained from an attached resource.")
-        self._push_binary_to_workload(resource_path)
+        resource_path = self._charm.model.resources.fetch(self._promtail_resource_name)
+        self._push_binary_to_workload(resource_path, workload_binary_path)
         return True
 
-    def _promtail_must_be_downloaded(self) -> bool:
+    def _promtail_must_be_downloaded(self, promtail_info: dict) -> bool:
         """Checks whether promtail binary must be downloaded or not.
+
+        Args:
+            promtail_info: dictionary containing information about promtail binary
+               that must be used. The dictionary must have three keys
+               - "filename": filename of promtail binary
+               - "zipsha": sha256 sum of zip file of promtail binary
+               - "binsha": sha256 sum of unpacked promtail binary
 
         Returns:
             a boolean representing whether Promtail binary must be downloaded or not.
         """
-        if not self._is_promtail_binary_in_charm():
+        binary_path = os.path.join(BINARY_DIR, promtail_info["filename"])
+        if not self._is_promtail_binary_in_charm(binary_path):
             return True
 
-        if not self._sha256sums_matches(BINARY_PATH, BINARY_SHA256SUM):
+        if not self._sha256sums_matches(binary_path, promtail_info["binsha"]):
             return True
 
         logger.debug("Promtail binary file is already in the the charm container.")
@@ -1814,39 +1983,45 @@ class LogProxyConsumer(ConsumerBase):
             logger.error(msg)
             return False
 
-    def _is_promtail_binary_in_charm(self) -> bool:
+    def _is_promtail_binary_in_charm(self, binary_path: str) -> bool:
         """Check if Promtail binary is already stored in charm container.
+
+        Args:
+            binary_path: string path of promtail binary to check
 
         Returns:
             a boolean representing whether Promtail is present or not.
         """
-        return True if Path(BINARY_PATH).is_file() else False
+        return True if Path(binary_path).is_file() else False
 
-    def _download_and_push_promtail_to_workload(self) -> None:
-        """Downloads a Promtail zip file and pushes the binary to the workload."""
-        # Use the first
-        relations = self._charm.model.relations[self._relation_name]
-        if len(relations) > 1:
-            logger.debug(
-                "Multiple log_proxy relations. Getting Promtail from application {}".format(
-                    relations[0].app.name
-                )
-            )
-        url = relations[0].data[relations[0].app].get("promtail_binary_zip_url")
+    def _download_and_push_promtail_to_workload(self, promtail_info: dict) -> None:
+        """Downloads a Promtail zip file and pushes the binary to the workload.
 
-        with urlopen(url) as r:
+        Args:
+            promtail_info: dictionary containing information about promtail binary
+               that must be used. The dictionary must have three keys
+               - "filename": filename of promtail binary
+               - "zipsha": sha256 sum of zip file of promtail binary
+               - "binsha": sha256 sum of unpacked promtail binary
+        """
+        with request.urlopen(promtail_info["url"]) as r:
             file_bytes = r.read()
-            with open(BINARY_ZIP_PATH, "wb") as f:
+            file_path = os.path.join(BINARY_DIR, promtail_info["filename"] + ".gz")
+            with open(file_path, "wb") as f:
                 f.write(file_bytes)
                 logger.info(
                     "Promtail binary zip file has been downloaded and stored in: %s",
-                    BINARY_ZIP_PATH,
+                    file_path,
                 )
 
-            ZipFile(BytesIO(file_bytes)).extractall(BINARY_DIR)
-            logger.debug("Promtail binary file has been downloaded.")
+            decompressed_file = GzipFile(fileobj=BytesIO(file_bytes))
+            binary_path = os.path.join(BINARY_DIR, promtail_info["filename"])
+            with open(binary_path, "wb") as outfile:
+                outfile.write(decompressed_file.read())
+                logger.debug("Promtail binary file has been downloaded.")
 
-        self._push_binary_to_workload()
+        workload_binary_path = os.path.join(WORKLOAD_BINARY_DIR, promtail_info["filename"])
+        self._push_binary_to_workload(binary_path, workload_binary_path)
 
     @property
     def _cli_args(self) -> str:
@@ -1864,9 +2039,19 @@ class LogProxyConsumer(ConsumerBase):
         Returns:
             A dict containing Promtail configuration.
         """
-        raw_current = self._container.pull(WORKLOAD_CONFIG_PATH).read()
-        current_config = yaml.safe_load(raw_current)
-        return current_config
+        if not self._container.can_connect():
+            logger.debug("Could not connect to promtail container!")
+            return {}
+        try:
+            raw_current = self._container.pull(WORKLOAD_CONFIG_PATH).read()
+            return yaml.safe_load(raw_current)
+        except (ProtocolError, PathError) as e:
+            logger.warning(
+                "Could not check the current promtail configuration due to "
+                "a failure in retrieving the file: %s",
+                e,
+            )
+            return {}
 
     @property
     def _promtail_config(self) -> dict:
@@ -1883,10 +2068,7 @@ class LogProxyConsumer(ConsumerBase):
         Returns:
             A list of endpoints
         """
-        clients = []  # type: list
-        for relation in self._charm.model.relations.get(self._relation_name, []):
-            clients = clients + json.loads(relation.data[relation.app]["endpoints"])
-        return clients
+        return self.loki_endpoints
 
     def _server_config(self) -> dict:
         """Generates the server section of the Promtail config file.
@@ -1916,7 +2098,12 @@ class LogProxyConsumer(ConsumerBase):
             A dict representing the `scrape_configs` section.
         """
         job_name = "juju_{}".format(self.topology.identifier)
-        common_labels = self.topology.as_promql_label_dict()
+
+        # The new JujuTopology doesn't include unit, but LogProxyConsumer should have it
+        common_labels = {
+            "juju_{}".format(k): v
+            for k, v in self.topology.as_dict(remapped_keys={"charm_name": "charm"}).items()
+        }
         scrape_configs = []
 
         # Files config
@@ -1936,6 +2123,14 @@ class LogProxyConsumer(ConsumerBase):
 
         # Syslog config
         if self._is_syslog:
+            relabel_mappings = [
+                "severity",
+                "facility",
+                "hostname",
+                "app_name",
+                "proc_id",
+                "msg_id",
+            ]
             syslog_labels = common_labels.copy()
             syslog_labels.update({"job": "{}_syslog".format(job_name)})
             syslog_config = {
@@ -1945,6 +2140,11 @@ class LogProxyConsumer(ConsumerBase):
                     "label_structured_data": True,
                     "labels": syslog_labels,
                 },
+                "relabel_configs": [
+                    {"source_labels": ["__syslog_message_{}".format(val)], "target_label": val}
+                    for val in relabel_mappings
+                ]
+                + [{"action": "labelmap", "regex": "__syslog_message_sd_(.+)"}],
             }
             scrape_configs.append(syslog_config)  # type: ignore
 
@@ -1966,28 +2166,62 @@ class LogProxyConsumer(ConsumerBase):
         return static_configs
 
     def _setup_promtail(self) -> None:
-        relation = self._charm.model.relations[self._relation_name][0]
-        if relation.data[relation.app].get("promtail_binary_zip_url", None) is None:
+        # Use the first
+        relations = self._charm.model.relations[self._relation_name]
+        if len(relations) > 1:
+            logger.debug(
+                "Multiple log_proxy relations. Getting Promtail from application {}".format(
+                    relations[0].app.name
+                )
+            )
+        relation = relations[0]
+        promtail_binaries = json.loads(
+            relation.data[relation.app].get("promtail_binary_zip_url", "{}")
+        )
+        if not promtail_binaries:
             return
+
+        if not self._is_promtail_installed(promtail_binaries[self._arch]):
+            try:
+                self._obtain_promtail(promtail_binaries[self._arch])
+            except HTTPError as e:
+                msg = "Promtail binary couldn't be downloaded - {}".format(str(e))
+                logger.warning(msg)
+                self.on.promtail_digest_error.emit(msg)
+                return
+
+        workload_binary_path = os.path.join(
+            WORKLOAD_BINARY_DIR, promtail_binaries[self._arch]["filename"]
+        )
+
         self._create_directories()
         self._container.push(
             WORKLOAD_CONFIG_PATH, yaml.safe_dump(self._promtail_config), make_dirs=True
         )
-        self._add_pebble_layer()
-        try:
-            self._obtain_promtail()
-        except HTTPError as e:
-            msg = "Promtail binary couldn't be download - {}".format(str(e))
-            logger.warning(msg)
-            self.on.promtail_digest_error.emit(msg)
-        if self._current_config["clients"]:
-            self._container.restart(WORKLOAD_SERVICE_NAME)
-            self.on.log_proxy_endpoint_joined.emit()
 
-    def _is_promtail_installed(self) -> bool:
-        """Determine if promtail has already been installed to the container."""
+        self._add_pebble_layer(workload_binary_path)
+
+        if self._current_config.get("clients"):
+            try:
+                self._container.restart(WORKLOAD_SERVICE_NAME)
+            except ChangeError as e:
+                self.on.promtail_digest_error.emit(str(e))
+            else:
+                self.on.log_proxy_endpoint_joined.emit()
+        else:
+            self.on.promtail_digest_error.emit("No promtail client endpoints available!")
+
+    def _is_promtail_installed(self, promtail_info: dict) -> bool:
+        """Determine if promtail has already been installed to the container.
+
+        Args:
+            promtail_info: dictionary containing information about promtail binary
+               that must be used. The dictionary must at least contain a key
+               "filename" giving the name of promtail binary
+        """
+        workload_binary_path = "{}/{}".format(WORKLOAD_BINARY_DIR, promtail_info["filename"])
         try:
-            self._container.list_files(WORKLOAD_BINARY_PATH)
+            self._container.list_files(workload_binary_path)
         except (APIError, FileNotFoundError):
             return False
         return True
@@ -2011,3 +2245,122 @@ class LogProxyConsumer(ConsumerBase):
         return 'action(type="omfwd" protocol="tcp" target="127.0.0.1" port="{}" Template="RSYSLOG_SyslogProtocol23Format" TCP_Framing="octet-counted")'.format(
             self._syslog_port
         )
+
+
+class CosTool:
+    """Uses cos-tool to inject label matchers into alert rule expressions and validate rules."""
+
+    _path = None
+    _disabled = False
+
+    def __init__(self, charm):
+        self._charm = charm
+
+    @property
+    def path(self):
+        """Lazy lookup of the path of cos-tool."""
+        if self._disabled:
+            return None
+        if not self._path:
+            self._path = self._get_tool_path()
+            if not self._path:
+                logger.debug("Skipping injection of juju topology as label matchers")
+                self._disabled = True
+        return self._path
+
+    def apply_label_matchers(self, rules) -> dict:
+        """Will apply label matchers to the expression of all alerts in all supplied groups."""
+        if not self.path:
+            return rules
+        for group in rules["groups"]:
+            rules_in_group = group.get("rules", [])
+            for rule in rules_in_group:
+                topology = {}
+                # if the user for some reason has provided juju_unit, we'll need to honor it
+                # in most cases, however, this will be empty
+                for label in [
+                    "juju_model",
+                    "juju_model_uuid",
+                    "juju_application",
+                    "juju_charm",
+                    "juju_unit",
+                ]:
+                    if label in rule["labels"]:
+                        topology[label] = rule["labels"][label]
+
+                rule["expr"] = self.inject_label_matchers(rule["expr"], topology)
+        return rules
+
+    def validate_alert_rules(self, rules: dict) -> Tuple[bool, str]:
+        """Will validate correctness of alert rules, returning a boolean and any errors."""
+        if not self.path:
+            logger.debug("`cos-tool` unavailable. Not validating alert correctness.")
+            return True, ""
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            rule_path = Path(tmpdir + "/validate_rule.yaml")
+
+            # Smash "our" rules format into what upstream actually uses, which is more like:
+            #
+            # groups:
+            #   - name: foo
+            #     rules:
+            #       - alert: SomeAlert
+            #         expr: up
+            #       - alert: OtherAlert
+            #         expr: up
+            transformed_rules = {"groups": []}  # type: ignore
+            for rule in rules["groups"]:
+                transformed = {"name": str(uuid.uuid4()), "rules": [rule]}
+                transformed_rules["groups"].append(transformed)
+
+            rule_path.write_text(yaml.dump(transformed_rules))
+
+            args = [str(self.path), "--format", "logql", "validate", str(rule_path)]
+            # noinspection PyBroadException
+            try:
+                self._exec(args)
+                return True, ""
+            except subprocess.CalledProcessError as e:
+                logger.debug("Validating the rules failed: %s", e.output)
+                return False, ", ".join([line for line in e.output if "error validating" in line])
+
+    def inject_label_matchers(self, expression, topology) -> str:
+        """Add label matchers to an expression."""
+        if not topology:
+            return expression
+        if not self.path:
+            logger.debug("`cos-tool` unavailable. Leaving expression unchanged: %s", expression)
+            return expression
+        args = [str(self.path), "--format", "logql", "transform"]
+        args.extend(
+            ["--label-matcher={}={}".format(key, value) for key, value in topology.items()]
+        )
+
+        args.extend(["{}".format(expression)])
+        # noinspection PyBroadException
+        try:
+            return self._exec(args)
+        except subprocess.CalledProcessError as e:
+            logger.debug('Applying the expression failed: "%s", falling back to the original', e)
+            print('Applying the expression failed: "{}", falling back to the original'.format(e))
+            return expression
+
+    def _get_tool_path(self) -> Optional[Path]:
+        arch = platform.processor()
+        arch = "amd64" if arch == "x86_64" else arch
+        res = "cos-tool-{}".format(arch)
+        try:
+            path = Path(res).resolve()
+            path.chmod(0o777)
+            return path
+        except NotImplementedError:
+            logger.debug("System lacks support for chmod")
+        except FileNotFoundError:
+            logger.debug('Could not locate cos-tool at: "{}"'.format(res))
+        return None
+
+    def _exec(self, cmd) -> str:
+        result = subprocess.run(cmd, check=True, stdout=subprocess.PIPE)
+        output = result.stdout.decode("utf-8").strip()
+        return output
