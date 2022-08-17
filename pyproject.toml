@@ -52,8 +52,12 @@ allow_redefinition = true
 
 # Ignore libraries that do not have type hint nor stubs
 [[tool.mypy.overrides]]
-module = ["ops.*", "kubernetes.*", "pytest_operator.*", "urllib3.*", "prometheus_api_client", "requests"]
+module = ["ops.*", "kubernetes.*", "urllib3.*", "prometheus_api_client", "requests"]
 ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = ["pytest_operator.*"]
+follow_imports = "skip"
 
 [tool.pytest.ini_options]
 minversion = "6.0"

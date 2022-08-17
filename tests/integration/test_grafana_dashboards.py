@@ -38,7 +38,9 @@ async def test_build_and_deploy(ops_test: OpsTest, charm_under_test):
 
 @pytest.mark.abort_on_fail
 async def test_relating_to_grafana(ops_test):
-    await ops_test.model.deploy("grafana-k8s", channel="edge", application_name="grafana", trust=True)
+    await ops_test.model.deploy(
+        "grafana-k8s", channel="edge", application_name="grafana", trust=True
+    )
     await ops_test.model.add_relation("grafana", app_name)
     await ops_test.model.wait_for_idle(apps=["grafana"], status="active", timeout=1000)
 
