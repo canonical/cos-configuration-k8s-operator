@@ -236,7 +236,7 @@ class TestStatusVsConfig(unittest.TestCase):
             hash_file_path = os.path.join(
                 self.harness.charm._git_sync_mount_point_sidecar, self.harness.charm.SUBDIR, ".git"
             )
-            container.push(hash_file_path, "hash 012345", make_dirs=True)
+            container.push(hash_file_path, "gitdir: ./abcd1234", make_dirs=True)
 
             # THEN the unit goes into active state
             # first need to emit update-status because hash file showed up after hooks fired

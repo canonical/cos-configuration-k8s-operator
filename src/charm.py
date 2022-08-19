@@ -7,6 +7,7 @@
 import hashlib
 import logging
 import os
+import re
 import shutil
 from typing import Final, List, Optional, Tuple, cast
 
@@ -126,11 +127,21 @@ class COSConfigCharm(CharmBase):
             self.meta.containers[self._container_name].mounts["content-from-git"].location
         )
 
+        # Use the repo hash for prefixing alert group names, otherwise filenames on the prometheus
+        # side would be rendered only from the first alertname, e.g.:
+        # /etc/prometheus/rules/juju_cpu_overuse_no_labels_alerts.rules
+        group_name_prefix = self._get_current_hash()
+        if group_name_prefix == self._hash_placeholder:
+            group_name_prefix = ""
+        else:
+            group_name_prefix = group_name_prefix[:8]
+
         self.prom_rules_provider = PrometheusRulesProvider(
             self,
             self.prometheus_relation_name,
             dir_path=os.path.join(self._repo_path, self.config["prometheus_alert_rules_path"]),
             recursive=True,
+            group_name_prefix=group_name_prefix,
         )
 
         self.loki_rules_provider = LokiPushApiConsumer(
@@ -314,9 +325,18 @@ class COSConfigCharm(CharmBase):
             return self._hash_placeholder
         try:
             with open(self._git_hash_file_path, "rt") as f:
-                return f.read().strip()
+                # The contents of the hash file looks like this:
+                # gitdir: ../.git/worktrees/28bd5c3e582708dd4c2b5919a01fd8ff37cd07c6
+                # Take only the hash.
+                contents = f.read().strip()
         except (OSError, IOError, FileNotFoundError) as e:
             logger.debug("Error reading hash file: %s", e)
+            return self._hash_placeholder
+
+        if match := re.match(".+/(.+)$", contents):
+            return match.group(1)
+        else:
+            logger.debug("Unrecognized hash file format: %s", contents[:100])
             return self._hash_placeholder
 
     @property

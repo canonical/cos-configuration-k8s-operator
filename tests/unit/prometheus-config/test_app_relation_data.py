@@ -87,7 +87,7 @@ class TestAppRelationData(unittest.TestCase):
         # AND the files appear on disk AFTER the last hook fired
         container = self.harness.model.unit.get_container("git-sync")
         container.push(self.prom_alert_filepath, self.free_standing_rule, make_dirs=True)
-        container.push(self.git_hash_file_path, "hash 012345", make_dirs=True)
+        container.push(self.git_hash_file_path, "gitdir: ./abcd1234", make_dirs=True)
 
         # AND update_status fires some time later
         self.harness.charm.on.update_status.emit()
@@ -107,7 +107,7 @@ class TestAppRelationData(unittest.TestCase):
 
         # AND the files appear on disk AFTER the last hook fired
         container = self.harness.model.unit.get_container("git-sync")
-        container.push(self.git_hash_file_path, "hash 012345", make_dirs=True)
+        container.push(self.git_hash_file_path, "gitdir: ./abcd1234", make_dirs=True)
 
         # WHEN a relation joins
         for rel_name in [
@@ -143,7 +143,7 @@ class TestAppRelationData(unittest.TestCase):
         container = self.harness.model.unit.get_container("git-sync")
         container.push(self.prom_alert_filepath, self.free_standing_rule, make_dirs=True)
         container.push(self.loki_alert_filepath, self.free_standing_rule, make_dirs=True)
-        container.push(self.git_hash_file_path, "hash 012345", make_dirs=True)
+        container.push(self.git_hash_file_path, "gitdir: ./abcd1234", make_dirs=True)
 
         # THEN after update status app relation data gets updated
         self.harness.charm.on.update_status.emit()
