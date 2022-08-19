@@ -322,7 +322,6 @@ import re
 import socket
 import subprocess
 import tempfile
-import uuid
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple, Union
 
@@ -339,7 +338,7 @@ LIBAPI = 0
 
 # Increment this PATCH version before using `charmcraft publish-lib` or reset
 # to 0 if you are raising the major API version
-LIBPATCH = 21
+LIBPATCH = 22
 
 logger = logging.getLogger(__name__)
 
@@ -356,7 +355,7 @@ ALLOWED_KEYS = {
     "sample_limit",
     "label_limit",
     "label_name_length_limit",
-    "label_value_lenght_limit",
+    "label_value_length_limit",
 }
 DEFAULT_JOB = {
     "metrics_path": "/metrics",
@@ -1118,7 +1117,7 @@ class MetricsEndpointConsumer(Object):
 
         # label all static configs in the Prometheus job
         # labeling inserts Juju topology information and
-        # sets a relable config for instance labels
+        # sets a relabel config for instance labels
         for static_config in static_configs:
             labels = static_config.get("labels", {}) if static_configs else {}
             all_targets = static_config.get("targets", [])
@@ -1187,7 +1186,7 @@ class MetricsEndpointConsumer(Object):
 
         Returns:
             a copy of the `labels` dictionary augmented with Juju
-            topology information with the exception of unit name.
+            topology information except for unit name.
         """
         juju_labels = labels.copy()  # deep copy not needed
         juju_labels.update(JujuTopology.from_dict(scrape_metadata).label_matcher_dict)
@@ -1262,7 +1261,7 @@ class MetricsEndpointConsumer(Object):
 def _dedupe_job_names(jobs: List[dict]):
     """Deduplicate a list of dicts by appending a hash to the value of the 'job_name' key.
 
-    Additionally fully dedeuplicate any identical jobs.
+    Additionally, fully de-duplicate any identical jobs.
 
     Args:
         jobs: A list of prometheus scrape jobs
@@ -1430,7 +1429,7 @@ class MetricsEndpointProvider(Object):
 
         Args:
             charm: a `CharmBase` object that manages this
-                `MetricsEndpointProvider` object. Typically this is
+                `MetricsEndpointProvider` object. Typically, this is
                 `self` in the instantiating class.
             relation_name: an optional string name of the relation between `charm`
                 and the Prometheus charmed service. The default is "metrics-endpoint".
@@ -1539,7 +1538,7 @@ class MetricsEndpointProvider(Object):
         When a metrics provider charm is related to a prometheus charm, the
         metrics provider sets specification and metadata related to its own
         scrape configuration. This information is set using Juju application
-        data. In addition each of the consumer units also sets its own
+        data. In addition, each of the consumer units also sets its own
         host address in Juju unit relation data.
         """
         self._set_unit_ip(event)
@@ -1568,7 +1567,7 @@ class MetricsEndpointProvider(Object):
         Each time a metrics provider charm container is restarted it updates its own
         host address in the unit relation data for the prometheus charm.
 
-        The only argument specified is an event and it ignored. this is for expediency
+        The only argument specified is an event, and it ignored. This is for expediency
         to be able to use this method as an event handler, although no access to the
         event is actually needed.
         """
@@ -1634,7 +1633,7 @@ class PrometheusRulesProvider(Object):
         relation_name: Name of the relation in `metadata.yaml` that
             has the `prometheus_scrape` interface.
         dir_path: Root directory for the collection of rule files.
-        recursive: Whether or not to scan for rule files recursively.
+        recursive: Whether to scan for rule files recursively.
     """
 
     def __init__(
@@ -1696,7 +1695,7 @@ class MetricsEndpointAggregator(Object):
 
     `MetricsEndpointAggregator` collects scrape target information from one
     or more related charms and forwards this to a `MetricsEndpointConsumer`
-    charm, which may be in a different Juju model. However it is
+    charm, which may be in a different Juju model. However, it is
     essential that `MetricsEndpointAggregator` itself resides in the same
     model as its scrape targets, as this is currently the only way to
     ensure in Juju that the `MetricsEndpointAggregator` will be able to
@@ -1765,7 +1764,7 @@ class MetricsEndpointAggregator(Object):
     information, just like `MetricsEndpointProvider` and
     `MetricsEndpointConsumer` do.
 
-    By default `MetricsEndpointAggregator` ensures that Prometheus
+    By default, `MetricsEndpointAggregator` ensures that Prometheus
     "instance" labels refer to Juju topology. This ensures that
     instance labels are stable over unit recreation. While it is not
     advisable to change this option, if required it can be done by
@@ -1778,7 +1777,7 @@ class MetricsEndpointAggregator(Object):
 
         Args:
             charm: a `CharmBase` object that manages this
-                `MetricsEndpointAggregator` object. Typically this is
+                `MetricsEndpointAggregator` object. Typically, this is
                 `self` in the instantiating class.
             relation_names: a dictionary with three keys. The value
                 of the "scrape_target" and "alert_rules" keys are
@@ -1843,7 +1842,7 @@ class MetricsEndpointAggregator(Object):
         When there is any change in relation data with any scrape
         target, the Prometheus scrape job, for that specific target is
         updated. Additionally, if this method is called manually, do the
-        sameself.
+        same.
 
         Args:
             targets: a `dict` containing target information
@@ -1985,7 +1984,7 @@ class MetricsEndpointAggregator(Object):
 
         Scrape target information is returned for each unit in the
         relation. This information contains the unit name, network
-        hostname (or address) for that unit, and port on which an
+        hostname (or address) for that unit, and port on which a
         metrics endpoint is exposed in that unit.
 
         Args:
@@ -2142,7 +2141,7 @@ class MetricsEndpointAggregator(Object):
         labels are stable across unit recreation.
 
         Returns:
-            a list of Prometheus relabling configurations. Each item in
+            a list of Prometheus relabeling configurations. Each item in
             this list is one relabel configuration.
         """
         return (
@@ -2216,22 +2215,7 @@ class CosTool:
 
         with tempfile.TemporaryDirectory() as tmpdir:
             rule_path = Path(tmpdir + "/validate_rule.yaml")
-
-            # Smash "our" rules format into what upstream actually uses, which is more like:
-            #
-            # groups:
-            #   - name: foo
-            #     rules:
-            #       - alert: SomeAlert
-            #         expr: up
-            #       - alert: OtherAlert
-            #         expr: up
-            transformed_rules = {"groups": []}  # type: ignore
-            for rule in rules["groups"]:
-                transformed = {"name": str(uuid.uuid4()), "rules": [rule]}
-                transformed_rules["groups"].append(transformed)
-
-            rule_path.write_text(yaml.dump(transformed_rules))
+            rule_path.write_text(yaml.dump(rules))
 
             args = [str(self.path), "validate", str(rule_path)]
             # noinspection PyBroadException
@@ -2240,7 +2224,13 @@ class CosTool:
                 return True, ""
             except subprocess.CalledProcessError as e:
                 logger.debug("Validating the rules failed: %s", e.output)
-                return False, ", ".join([line for line in e.output if "error validating" in line])
+                return False, ", ".join(
+                    [
+                        line
+                        for line in e.output.decode("utf8").strip().split("\n")
+                        if "error validating" in line
+                    ]
+                )
 
     def inject_label_matchers(self, expression, topology) -> str:
         """Add label matchers to an expression."""
@@ -2277,6 +2267,5 @@ class CosTool:
         return None
 
     def _exec(self, cmd) -> str:
-        result = subprocess.run(cmd, check=True, stdout=subprocess.PIPE)
-        output = result.stdout.decode("utf-8").strip()
-        return output
+        result = subprocess.run(cmd, check=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+        return result.stdout.decode("utf-8").strip()
