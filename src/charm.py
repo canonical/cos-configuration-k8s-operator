@@ -14,7 +14,7 @@ from typing import Final, List, Optional, Tuple, cast
 from charms.grafana_k8s.v0.grafana_dashboard import GrafanaDashboardProvider
 from charms.loki_k8s.v0.loki_push_api import LokiPushApiConsumer
 from charms.observability_libs.v0.kubernetes_service_patch import KubernetesServicePatch
-from charms.prometheus_k8s.v0.prometheus_scrape import PrometheusRulesProvider
+from charms.prometheus_k8s.v0.prometheus_scrape import MetricsEndpointProvider
 from ops.charm import ActionEvent, CharmBase
 from ops.main import main
 from ops.model import ActiveStatus, BlockedStatus, MaintenanceStatus
@@ -69,7 +69,7 @@ class COSConfigCharm(CharmBase):
         super().__init__(*args)
 
         # Path to the repo in the _charm_ container, which is needed for instantiating
-        # PrometheusRulesProvider with the rule files (otherwise would need to fetch via pebble
+        # MetricsEndpointProvider with the rule files (otherwise would need to fetch via pebble
         # every time).
         # Using model.storages is tricky because it only works after storage-attached event
         # (otherwise: IndexError: list index out of range), which complicates things.
@@ -136,12 +136,14 @@ class COSConfigCharm(CharmBase):
         else:
             group_name_prefix = group_name_prefix[:8]
 
-        self.prom_rules_provider = PrometheusRulesProvider(
+        self.prom_rules_provider = MetricsEndpointProvider(
             self,
             self.prometheus_relation_name,
-            dir_path=os.path.join(self._repo_path, self.config["prometheus_alert_rules_path"]),
-            recursive=True,
+            alert_rules_path=os.path.join(
+                self._repo_path, self.config["prometheus_alert_rules_path"]
+            ),
             group_name_prefix=group_name_prefix,
+            auto_generate_default_job=False,
         )
 
         self.loki_rules_provider = LokiPushApiConsumer(

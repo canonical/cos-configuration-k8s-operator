@@ -12,7 +12,7 @@ import hypothesis.strategies as st
 import ops
 from charms.grafana_k8s.v0.grafana_dashboard import GrafanaDashboardProvider
 from charms.loki_k8s.v0.loki_push_api import LokiPushApiConsumer
-from charms.prometheus_k8s.v0.prometheus_scrape import PrometheusRulesProvider
+from charms.prometheus_k8s.v0.prometheus_scrape import MetricsEndpointProvider
 from hypothesis import given
 from ops.testing import Harness
 
@@ -60,7 +60,7 @@ class TestReinitializeCalledOnce(unittest.TestCase):
             ) as graf_mock, patch.object(
                 LokiPushApiConsumer, "_reinitialize_alert_rules"
             ) as loki_mock, patch.object(
-                PrometheusRulesProvider, "_reinitialize_alert_rules"
+                MetricsEndpointProvider, "_reinitialize_alert_rules"
             ) as prom_mock:
                 # GIVEN any number of units present
                 for i in range(1, num_units):
@@ -107,7 +107,7 @@ class TestReinitializeCalledOnce(unittest.TestCase):
             ) as graf_mock, patch.object(
                 LokiPushApiConsumer, "_reinitialize_alert_rules"
             ) as loki_mock, patch.object(
-                PrometheusRulesProvider, "_reinitialize_alert_rules"
+                MetricsEndpointProvider, "_reinitialize_alert_rules"
             ) as prom_mock:
                 # GIVEN any number of units present
                 for i in range(1, num_units):
@@ -182,7 +182,7 @@ class TestReinitializeCalledOnce(unittest.TestCase):
             ) as graf_mock, patch.object(
                 LokiPushApiConsumer, "_reinitialize_alert_rules"
             ) as loki_mock, patch.object(
-                PrometheusRulesProvider, "_reinitialize_alert_rules"
+                MetricsEndpointProvider, "_reinitialize_alert_rules"
             ) as prom_mock:
                 print("INSIDE CTXMGR")
                 # WHEN repo url is unset
@@ -256,7 +256,7 @@ class TestConfigChanged(unittest.TestCase):
             ) as graf_mock, patch.object(
                 LokiPushApiConsumer, "_reinitialize_alert_rules"
             ) as loki_mock, patch.object(
-                PrometheusRulesProvider, "_reinitialize_alert_rules"
+                MetricsEndpointProvider, "_reinitialize_alert_rules"
             ) as prom_mock:
                 # WHEN config option is updated
                 self.harness.update_config({config_option[0]: config_option[1]})
