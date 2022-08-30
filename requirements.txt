@@ -1,9 +1,7 @@
 # Copyright 2021 Canonical Ltd.
 # See LICENSE file for licensing details.
 
-git+https://github.com/canonical/operator/#egg=ops
-#git+https://github.com/rwcarlsen/operator@rm-storage-error#egg=ops
-#ops
+ops
 PyYAML
 lightkube
 lightkube-models
