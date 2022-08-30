@@ -38,7 +38,6 @@ copyright-regexp = "Copyright\\s\\d{4}([-,]\\d{4})*\\s+%(author)s"
 [tool.mypy]
 pretty = true
 python_version = 3.8
-mypy_path = "$MYPY_CONFIG_FILE_DIR/src:$MYPY_CONFIG_FILE_DIR/lib"
 follow_imports = "silent"
 warn_redundant_casts = true
 warn_unused_ignores = true
@@ -58,6 +57,7 @@ ignore_missing_imports = true
 [[tool.mypy.overrides]]
 module = ["pytest_operator.*"]
 follow_imports = "skip"
+ignore_missing_imports = true
 
 [tool.pytest.ini_options]
 minversion = "6.0"
