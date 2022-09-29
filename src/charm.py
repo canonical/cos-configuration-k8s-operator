@@ -127,21 +127,11 @@ class COSConfigCharm(CharmBase):
             self.meta.containers[self._container_name].mounts["content-from-git"].location
         )
 
-        # Use the repo hash for prefixing alert group names, otherwise filenames on the prometheus
-        # side would be rendered only from the first alertname, e.g.:
-        # /etc/prometheus/rules/juju_cpu_overuse_no_labels_alerts.rules
-        group_name_prefix = self._get_current_hash()
-        if group_name_prefix == self._hash_placeholder:
-            group_name_prefix = ""
-        else:
-            group_name_prefix = group_name_prefix[:8]
-
         self.prom_rules_provider = PrometheusRulesProvider(
             self,
             self.prometheus_relation_name,
             dir_path=os.path.join(self._repo_path, self.config["prometheus_alert_rules_path"]),
             recursive=True,
-            group_name_prefix=group_name_prefix,
         )
 
         self.loki_rules_provider = LokiPushApiConsumer(
