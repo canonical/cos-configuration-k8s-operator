@@ -13,7 +13,9 @@ import ops
 from charms.grafana_k8s.v0.grafana_dashboard import GrafanaDashboardProvider
 from charms.loki_k8s.v0.loki_push_api import LokiPushApiConsumer
 from charms.prometheus_k8s.v0.prometheus_scrape import PrometheusRulesProvider
+from helpers import FakeProcessVersionCheck
 from hypothesis import given
+from ops.model import Container
 from ops.testing import Harness
 
 from charm import COSConfigCharm
@@ -35,6 +37,7 @@ class TestReinitializeCalledOnce(unittest.TestCase):
         self.app_name = "cos-configuration-k8s"
 
     @patch("charm.KubernetesServicePatch", lambda x, y: None)
+    @patch.object(Container, "exec", new=FakeProcessVersionCheck)
     @given(st.integers(1, 5))
     def test_leader_doesnt_reinitialize_when_no_config_and_update_status_fires(self, num_units):
         """Scenario: Leader unit is deployed without config and update-status fires."""
@@ -81,6 +84,7 @@ class TestReinitializeCalledOnce(unittest.TestCase):
 
     @patch("charm.COSConfigCharm._exec_sync_repo", lambda *a, **kw: "", "")
     @patch("charm.KubernetesServicePatch", lambda x, y: None)
+    @patch.object(Container, "exec", new=FakeProcessVersionCheck)
     @given(st.integers(1, 5))
     def test_leader_reinitialize_once_with_config_and_update_status_fires(self, num_units):
         """Scenario: Leader unit is deployed with config and then update-status fires."""
@@ -141,6 +145,7 @@ class TestReinitializeCalledOnce(unittest.TestCase):
 
     @patch("charm.COSConfigCharm._exec_sync_repo", lambda *a, **kw: "", "")
     @patch("charm.KubernetesServicePatch", lambda x, y: None)
+    @patch.object(Container, "exec", new=FakeProcessVersionCheck)
     @given(st.integers(1, 5))
     def test_leader_reinitialize_once_when_repo_unset(self, num_units):
         """Scenario: Leader unit is deployed with config and then repo is unset."""
@@ -215,6 +220,7 @@ class TestConfigChanged(unittest.TestCase):
 
     @patch("charm.COSConfigCharm._exec_sync_repo", lambda *a, **kw: "", "")
     @patch("charm.KubernetesServicePatch", lambda x, y: None)
+    @patch.object(Container, "exec", new=FakeProcessVersionCheck)
     @given(
         st.tuples(
             st.sampled_from(["git_repo", "git_branch", "git_rev"]),

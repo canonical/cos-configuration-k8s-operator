@@ -9,7 +9,8 @@ from unittest.mock import patch
 
 import ops
 import yaml
-from ops.model import ActiveStatus
+from helpers import FakeProcessVersionCheck
+from ops.model import ActiveStatus, Container
 from ops.testing import Harness
 
 from charm import COSConfigCharm
@@ -27,6 +28,7 @@ class TestAppRelationData(unittest.TestCase):
     """
 
     @patch("charm.KubernetesServicePatch", lambda x, y: None)
+    @patch.object(Container, "exec", new=FakeProcessVersionCheck)
     def setUp(self):
         self.harness = Harness(COSConfigCharm)
         self.addCleanup(self.harness.cleanup)

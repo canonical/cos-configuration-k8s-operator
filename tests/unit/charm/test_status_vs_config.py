@@ -11,8 +11,9 @@ from unittest.mock import patch
 
 import hypothesis.strategies as st
 import ops
+from helpers import FakeProcessVersionCheck
 from hypothesis import given
-from ops.model import ActiveStatus, BlockedStatus
+from ops.model import ActiveStatus, BlockedStatus, Container
 from ops.testing import Harness
 
 from charm import COSConfigCharm
@@ -30,6 +31,7 @@ class TestBlockedStatus(unittest.TestCase):
     """
 
     @patch("charm.KubernetesServicePatch", lambda x, y: None)
+    @patch.object(Container, "exec", new=FakeProcessVersionCheck)
     @given(st.booleans(), st.integers(1, 5))
     def test_unit_is_blocked_if_no_config_provided(self, is_leader, num_units):
         """Scenario: Unit is deployed without any user-provided config."""
@@ -78,6 +80,7 @@ class TestRandomHooks(unittest.TestCase):
     """
 
     @patch("charm.KubernetesServicePatch", lambda x, y: None)
+    @patch.object(Container, "exec", new=FakeProcessVersionCheck)
     @given(
         st.booleans(),
         st.integers(1, 5),
@@ -164,6 +167,7 @@ class TestStatusVsConfig(unittest.TestCase):
     """
 
     @patch("charm.KubernetesServicePatch", lambda x, y: None)
+    @patch.object(Container, "exec", new=FakeProcessVersionCheck)
     def setUp(self):
         self.harness = Harness(COSConfigCharm)
         self.addCleanup(self.harness.cleanup)

@@ -51,7 +51,7 @@ allow_redefinition = true
 
 # Ignore libraries that do not have type hint nor stubs
 [[tool.mypy.overrides]]
-module = ["ops.*", "kubernetes.*", "urllib3.*", "prometheus_api_client", "requests"]
+module = ["ops.*", "kubernetes.*", "urllib3.*", "prometheus_api_client", "requests", "helpers"]
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
