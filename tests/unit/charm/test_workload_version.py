@@ -12,7 +12,6 @@ from ops.testing import Harness
 
 from charm import COSConfigCharm
 
-
 ops.testing.SIMULATE_CAN_CONNECT = True
 
 
