@@ -9,7 +9,8 @@ from unittest.mock import patch
 
 import ops
 import yaml
-from ops.model import ActiveStatus
+from helpers import FakeProcessVersionCheck
+from ops.model import ActiveStatus, Container
 from ops.testing import Harness
 
 from charm import COSConfigCharm
@@ -27,6 +28,7 @@ class TestAppRelationData(unittest.TestCase):
     """
 
     @patch("charm.KubernetesServicePatch", lambda x, y: None)
+    @patch.object(Container, "exec", new=FakeProcessVersionCheck)
     def setUp(self):
         self.harness = Harness(COSConfigCharm)
         self.addCleanup(self.harness.cleanup)
@@ -34,8 +36,7 @@ class TestAppRelationData(unittest.TestCase):
         self.app_name = "cos-configuration-k8s"
         self.peer_rel_id = self.harness.add_relation("replicas", self.app_name)
 
-        storage_id = self.harness.add_storage("content-from-git")[0]
-        self.harness.attach_storage(storage_id)
+        self.harness.add_storage("content-from-git", attach=True)
 
         self.harness.begin_with_initial_hooks()
         self.harness.container_pebble_ready("git-sync")
@@ -88,7 +89,7 @@ class TestAppRelationData(unittest.TestCase):
         # AND the files appear on disk AFTER the last hook fired
         container = self.harness.model.unit.get_container("git-sync")
         container.push(self.prom_alert_filepath, self.free_standing_rule, make_dirs=True)
-        container.push(self.git_hash_file_path, "hash 012345", make_dirs=True)
+        container.push(self.git_hash_file_path, "gitdir: ./abcd1234", make_dirs=True)
 
         # AND update_status fires some time later
         self.harness.charm.on.update_status.emit()
@@ -108,7 +109,7 @@ class TestAppRelationData(unittest.TestCase):
 
         # AND the files appear on disk AFTER the last hook fired
         container = self.harness.model.unit.get_container("git-sync")
-        container.push(self.git_hash_file_path, "hash 012345", make_dirs=True)
+        container.push(self.git_hash_file_path, "gitdir: ./abcd1234", make_dirs=True)
 
         # WHEN a relation joins
         for rel_name in [
@@ -144,7 +145,7 @@ class TestAppRelationData(unittest.TestCase):
         container = self.harness.model.unit.get_container("git-sync")
         container.push(self.prom_alert_filepath, self.free_standing_rule, make_dirs=True)
         container.push(self.loki_alert_filepath, self.free_standing_rule, make_dirs=True)
-        container.push(self.git_hash_file_path, "hash 012345", make_dirs=True)
+        container.push(self.git_hash_file_path, "gitdir: ./abcd1234", make_dirs=True)
 
         # THEN after update status app relation data gets updated
         self.harness.charm.on.update_status.emit()

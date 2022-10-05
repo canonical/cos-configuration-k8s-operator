@@ -7,6 +7,7 @@
 import hashlib
 import logging
 import os
+import re
 import shutil
 from typing import Final, List, Optional, Tuple, cast
 
@@ -314,9 +315,18 @@ class COSConfigCharm(CharmBase):
             return self._hash_placeholder
         try:
             with open(self._git_hash_file_path, "rt") as f:
-                return f.read().strip()
+                # The contents of the hash file looks like this:
+                # gitdir: ../.git/worktrees/28bd5c3e582708dd4c2b5919a01fd8ff37cd07c6
+                # Take only the hash.
+                contents = f.read().strip()
         except (OSError, IOError, FileNotFoundError) as e:
             logger.debug("Error reading hash file: %s", e)
+            return self._hash_placeholder
+
+        if match := re.match(".+/(.+)$", contents):
+            return match.group(1)
+        else:
+            logger.debug("Unrecognized hash file format: %s", contents[:100])
             return self._hash_placeholder
 
     @property
@@ -360,6 +370,13 @@ class COSConfigCharm(CharmBase):
     def _on_git_sync_pebble_ready(self, _):
         """Event handler for PebbleReadyEvent."""
         self._common_exit_hook()
+        version = self._git_sync_version
+        if version:
+            self.unit.set_workload_version(version)
+        else:
+            logger.debug(
+                "Cannot set workload version at this time: could not get git-sync version."
+            )
 
     def _on_update_status(self, _):
         # reload rules in lieu of inotify or manual relation-set
@@ -376,6 +393,23 @@ class COSConfigCharm(CharmBase):
     def _on_config_changed(self, _):
         """Event handler for ConfigChangedEvent."""
         self._common_exit_hook()
+
+    @property
+    def _git_sync_version(self) -> Optional[str]:
+        """Returns the version of git-sync.
+
+        Returns:
+            A string equal to the git-sync version.
+        """
+        if not self.container.can_connect():
+            return None
+        version_output, _ = self.container.exec(["/git-sync", "-version"]).wait_output()
+        # Output looks like this:
+        # v3.5.0
+        result = re.search(r"v(\d*\.\d*\.\d*)", version_output)
+        if result is None:
+            return result
+        return result.group(1)
 
 
 if __name__ == "__main__":

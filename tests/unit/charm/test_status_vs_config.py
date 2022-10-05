@@ -11,8 +11,9 @@ from unittest.mock import patch
 
 import hypothesis.strategies as st
 import ops
+from helpers import FakeProcessVersionCheck
 from hypothesis import given
-from ops.model import ActiveStatus, BlockedStatus
+from ops.model import ActiveStatus, BlockedStatus, Container
 from ops.testing import Harness
 
 from charm import COSConfigCharm
@@ -30,6 +31,7 @@ class TestBlockedStatus(unittest.TestCase):
     """
 
     @patch("charm.KubernetesServicePatch", lambda x, y: None)
+    @patch.object(Container, "exec", new=FakeProcessVersionCheck)
     @given(st.booleans(), st.integers(1, 5))
     def test_unit_is_blocked_if_no_config_provided(self, is_leader, num_units):
         """Scenario: Unit is deployed without any user-provided config."""
@@ -51,8 +53,7 @@ class TestBlockedStatus(unittest.TestCase):
             self.harness.set_leader(is_leader)
 
             # AND storage is attached
-            storage_id = self.harness.add_storage("content-from-git")[0]
-            self.harness.attach_storage(storage_id)
+            self.harness.add_storage("content-from-git", attach=True)
 
             self.harness.begin_with_initial_hooks()
             self.harness.container_pebble_ready("git-sync")
@@ -79,6 +80,7 @@ class TestRandomHooks(unittest.TestCase):
     """
 
     @patch("charm.KubernetesServicePatch", lambda x, y: None)
+    @patch.object(Container, "exec", new=FakeProcessVersionCheck)
     @given(
         st.booleans(),
         st.integers(1, 5),
@@ -111,8 +113,7 @@ class TestRandomHooks(unittest.TestCase):
         self.harness.set_leader(True)
 
         # AND storage is attached
-        storage_id = self.harness.add_storage("content-from-git")[0]
-        self.harness.attach_storage(storage_id)
+        self.harness.add_storage("content-from-git", attach=True)
 
         # AND the usual startup hooks fire
         self.harness.begin_with_initial_hooks()
@@ -124,11 +125,12 @@ class TestRandomHooks(unittest.TestCase):
             # WHEN later on the user adds relations and more units
             units_to_add = [lambda: self.harness.set_leader(is_leader)]
             for rel_name, num_remote_units in rel_list:
-                rel_id = self.harness.add_relation(rel_name, f"{self.harness.model.app.name}-app")
+                app_name = f"{self.harness.model.app.name}-app"
+                rel_id = self.harness.add_relation(rel_name, app_name)
                 units_to_add.extend(
                     [
                         lambda rel_id=rel_id, rel_name=rel_name, num_units=num_units: self.harness.add_relation_unit(  # type: ignore
-                            rel_id, f"{rel_name}/{num_units}"
+                            rel_id, f"{app_name}/{num_units}"
                         )
                         for num_units in range(num_remote_units)
                     ]
@@ -165,14 +167,14 @@ class TestStatusVsConfig(unittest.TestCase):
     """
 
     @patch("charm.KubernetesServicePatch", lambda x, y: None)
+    @patch.object(Container, "exec", new=FakeProcessVersionCheck)
     def setUp(self):
         self.harness = Harness(COSConfigCharm)
         self.addCleanup(self.harness.cleanup)
 
         self.peer_rel_id = self.harness.add_relation("replicas", self.harness.model.app.name)
 
-        storage_id = self.harness.add_storage("content-from-git")[0]
-        self.harness.attach_storage(storage_id)
+        self.harness.add_storage("content-from-git", attach=True)
 
         self.harness.begin_with_initial_hooks()
         self.harness.container_pebble_ready("git-sync")
@@ -238,7 +240,7 @@ class TestStatusVsConfig(unittest.TestCase):
             hash_file_path = os.path.join(
                 self.harness.charm._git_sync_mount_point_sidecar, self.harness.charm.SUBDIR, ".git"
             )
-            container.push(hash_file_path, "hash 012345", make_dirs=True)
+            container.push(hash_file_path, "gitdir: ./abcd1234", make_dirs=True)
 
             # THEN the unit goes into active state
             # first need to emit update-status because hash file showed up after hooks fired

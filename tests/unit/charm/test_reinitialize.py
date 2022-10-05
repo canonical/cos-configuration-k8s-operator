@@ -13,7 +13,9 @@ import ops
 from charms.grafana_k8s.v0.grafana_dashboard import GrafanaDashboardProvider
 from charms.loki_k8s.v0.loki_push_api import LokiPushApiConsumer
 from charms.prometheus_k8s.v0.prometheus_scrape import PrometheusRulesProvider
+from helpers import FakeProcessVersionCheck
 from hypothesis import given
+from ops.model import Container
 from ops.testing import Harness
 
 from charm import COSConfigCharm
@@ -35,6 +37,7 @@ class TestReinitializeCalledOnce(unittest.TestCase):
         self.app_name = "cos-configuration-k8s"
 
     @patch("charm.KubernetesServicePatch", lambda x, y: None)
+    @patch.object(Container, "exec", new=FakeProcessVersionCheck)
     @given(st.integers(1, 5))
     def test_leader_doesnt_reinitialize_when_no_config_and_update_status_fires(self, num_units):
         """Scenario: Leader unit is deployed without config and update-status fires."""
@@ -45,8 +48,7 @@ class TestReinitializeCalledOnce(unittest.TestCase):
         self.harness.set_leader(True)
 
         # AND storage is attached
-        storage_id = self.harness.add_storage("content-from-git")[0]
-        self.harness.attach_storage(storage_id)
+        self.harness.add_storage("content-from-git", attach=True)
 
         self.harness.begin_with_initial_hooks()
         self.harness.container_pebble_ready("git-sync")
@@ -82,6 +84,7 @@ class TestReinitializeCalledOnce(unittest.TestCase):
 
     @patch("charm.COSConfigCharm._exec_sync_repo", lambda *a, **kw: "", "")
     @patch("charm.KubernetesServicePatch", lambda x, y: None)
+    @patch.object(Container, "exec", new=FakeProcessVersionCheck)
     @given(st.integers(1, 5))
     def test_leader_reinitialize_once_with_config_and_update_status_fires(self, num_units):
         """Scenario: Leader unit is deployed with config and then update-status fires."""
@@ -93,8 +96,7 @@ class TestReinitializeCalledOnce(unittest.TestCase):
         self.harness.set_leader(True)
 
         # AND storage is attached
-        storage_id = self.harness.add_storage("content-from-git")[0]
-        self.harness.attach_storage(storage_id)
+        self.harness.add_storage("content-from-git", attach=True)
 
         self.harness.begin_with_initial_hooks()
         self.harness.container_pebble_ready("git-sync")
@@ -125,7 +127,7 @@ class TestReinitializeCalledOnce(unittest.TestCase):
                     self.harness.charm.SUBDIR,
                     ".git",
                 )
-                container.push(hash_file_path, "hash 012345", make_dirs=True)
+                container.push(hash_file_path, "gitdir: ./abcd1234", make_dirs=True)
 
                 # AND update-status fires
                 self.harness.charm.on.update_status.emit()
@@ -143,6 +145,7 @@ class TestReinitializeCalledOnce(unittest.TestCase):
 
     @patch("charm.COSConfigCharm._exec_sync_repo", lambda *a, **kw: "", "")
     @patch("charm.KubernetesServicePatch", lambda x, y: None)
+    @patch.object(Container, "exec", new=FakeProcessVersionCheck)
     @given(st.integers(1, 5))
     def test_leader_reinitialize_once_when_repo_unset(self, num_units):
         """Scenario: Leader unit is deployed with config and then repo is unset."""
@@ -154,8 +157,7 @@ class TestReinitializeCalledOnce(unittest.TestCase):
         self.harness.set_leader(True)
 
         # AND storage is attached
-        storage_id = self.harness.add_storage("content-from-git")[0]
-        self.harness.attach_storage(storage_id)
+        self.harness.add_storage("content-from-git", attach=True)
 
         self.harness.begin_with_initial_hooks()
         self.harness.container_pebble_ready("git-sync")
@@ -174,7 +176,7 @@ class TestReinitializeCalledOnce(unittest.TestCase):
             hash_file_path = os.path.join(
                 self.harness.charm._git_sync_mount_point_sidecar, self.harness.charm.SUBDIR, ".git"
             )
-            container.push(hash_file_path, "hash 012345", make_dirs=True)
+            container.push(hash_file_path, "gitdir: ./abcd1234", make_dirs=True)
 
             # AND the repo URL is set
             self.harness.update_config({"git_repo": "http://does.not.really.matter/repo.git"})
@@ -218,10 +220,11 @@ class TestConfigChanged(unittest.TestCase):
 
     @patch("charm.COSConfigCharm._exec_sync_repo", lambda *a, **kw: "", "")
     @patch("charm.KubernetesServicePatch", lambda x, y: None)
+    @patch.object(Container, "exec", new=FakeProcessVersionCheck)
     @given(
         st.tuples(
             st.sampled_from(["git_repo", "git_branch", "git_rev"]),
-            st.text(alphabet=list(string.ascii_lowercase + string.ascii_uppercase)),
+            st.text(alphabet=list(string.ascii_lowercase + string.ascii_uppercase), min_size=1),
         )
     )
     def test_reinitialize_is_called_when_config_changes(self, config_option):
@@ -237,8 +240,7 @@ class TestConfigChanged(unittest.TestCase):
             self.harness.set_leader(True)
 
             # AND storage is attached
-            storage_id = self.harness.add_storage("content-from-git")[0]
-            self.harness.attach_storage(storage_id)
+            self.harness.add_storage("content-from-git", attach=True)
 
             self.harness.begin_with_initial_hooks()
             self.harness.container_pebble_ready("git-sync")
@@ -251,7 +253,7 @@ class TestConfigChanged(unittest.TestCase):
             hash_file_path = os.path.join(
                 self.harness.charm._git_sync_mount_point_sidecar, self.harness.charm.SUBDIR, ".git"
             )
-            container.push(hash_file_path, "hash 012345", make_dirs=True)
+            container.push(hash_file_path, "gitdir: ./abcd1234", make_dirs=True)
 
             self.harness.charm.on.update_status.emit()
 
@@ -271,7 +273,7 @@ class TestConfigChanged(unittest.TestCase):
                     self.harness.charm.SUBDIR,
                     ".git",
                 )
-                container.push(hash_file_path, config_option[1], make_dirs=True)
+                container.push(hash_file_path, "gitdir: ./" + config_option[1], make_dirs=True)
 
                 # AND update-status fires
                 self.harness.charm.on.update_status.emit()
