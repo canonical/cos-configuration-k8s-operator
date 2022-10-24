@@ -2,11 +2,20 @@
 # See LICENSE file for licensing details.
 
 name: cos-configuration-k8s
-description: |
-  cos-configuration fetches alert rules and other settings specified in a Git repository, and
-  forwards them to downstream prometheus, loki anf grafana charms.
+assumes:
+  - k8s-api
+
 summary: |
   Push user (3rd-party) rules to COS charms.
+
+description: |
+  Cos-configuration fetches alert rules and other settings specified in a Git repository, and
+  forwards them to downstream prometheus, loki anf grafana charms.
+
+website: https://charmhub.io/cos-configuration-k8s
+source: https://github.com/canonical/cos-configuration-k8s-operator
+issues: https://github.com/canonical/cos-configuration-k8s-operator/issues
+docs: https://discourse.charmhub.io/t/cos-configuration-k8s-docs-index/7284
 
 containers:
   git-sync:
