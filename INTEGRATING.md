@@ -3,7 +3,7 @@
 You need to deploy a `cos-config` app per repo.
 
 ```mermaid
-flowchart LR
+flowchart TD
   subgraph repo [Some repo]
     prom-rules
     loki-rules
