@@ -182,7 +182,7 @@ class COSConfigCharm(CharmBase):
 
         self._update_hash_and_rel_data()
 
-        if self._stored_hash in [self._hash_placeholder, None]:
+        if self._stored_get("hash") in [self._hash_placeholder, None]:
             self.unit.status = BlockedStatus("No hash file yet - confirm config is valid")
         else:
             self.unit.status = ActiveStatus()
@@ -329,24 +329,22 @@ class COSConfigCharm(CharmBase):
             logger.debug("Unrecognized hash file format: %s", contents[:100])
             return self._hash_placeholder
 
-    @property
-    def _stored_hash(self) -> Optional[str]:
+    def _stored_get(self, key: str) -> Optional[str]:
         if relation := self.model.get_relation(self._peer_relation_name):
-            return relation.data[self.app].get("hash", None)
+            return relation.data[self.app].get(key, None)
         return None
 
-    @_stored_hash.setter
-    def _stored_hash(self, sha: str):
+    def _stored_set(self, key: str, value: str):
         """Update peer relation data with the given hash."""
         if not self.unit.is_leader():
-            logger.info("store hash: abort: not leader")
+            logger.info("store %s: abort: not leader", key)
             return
         for relation in self.model.relations[self._peer_relation_name]:
             logger.info(
-                "setting stored hash from [%s] to [%s]", relation.data[self.app].get("hash"), sha
+                "storing %s: changed from [%s] to [%s]", key, relation.data[self.app].get(key), value
             )
             # TODO: is this needed for every relation? app data should be the same for all
-            relation.data[self.app]["hash"] = sha
+            relation.data[self.app][key] = value
 
     def _update_hash_and_rel_data(self):
         # Use the contents of the hash file as an indication for a change in the repo.
@@ -354,18 +352,24 @@ class COSConfigCharm(CharmBase):
         # placeholder value, indicating there is no hash file present yet, or to the contents of
         # the hash file if it is present.
         current_hash = self._get_current_hash()
-        if current_hash != self._stored_hash and self.unit.is_leader():
+        stored_hash = self._stored_get("hash")
+        if current_hash != stored_hash and self.unit.is_leader():
             logger.info(
                 "Updating stored hash: git-sync hash changed from %s (%s) to %s (%s)",
-                self._stored_hash,
-                type(self._stored_hash),
+                stored_hash,
+                type(stored_hash),
                 current_hash,
                 type(current_hash),
             )
             self.prom_rules_provider._reinitialize_alert_rules()
             self.loki_rules_provider._reinitialize_alert_rules()
             self.grafana_dashboards_provider._reinitialize_dashboard_data(inject_dropdowns=False)
-            self._stored_hash = current_hash
+            self._stored_set("reinit_without_topology_dropdowns", "Done")
+            self._stored_set("hash", current_hash)
+
+        elif not self._stored_get("reinit_without_topology_dropdowns"):
+            self.grafana_dashboards_provider._reinitialize_dashboard_data(inject_dropdowns=False)
+            self._stored_set("reinit_without_topology_dropdowns", "Done")
 
     def _on_git_sync_pebble_ready(self, _):
         """Event handler for PebbleReadyEvent."""
