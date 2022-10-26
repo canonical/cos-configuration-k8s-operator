@@ -364,7 +364,7 @@ class COSConfigCharm(CharmBase):
             )
             self.prom_rules_provider._reinitialize_alert_rules()
             self.loki_rules_provider._reinitialize_alert_rules()
-            self.grafana_dashboards_provider._reinitialize_dashboard_data()
+            self.grafana_dashboards_provider._reinitialize_dashboard_data(inject_dropdowns=False)
             self._stored_hash = current_hash
 
     def _on_git_sync_pebble_ready(self, _):
