@@ -341,7 +341,10 @@ class COSConfigCharm(CharmBase):
             return
         for relation in self.model.relations[self._peer_relation_name]:
             logger.info(
-                "storing %s: changed from [%s] to [%s]", key, relation.data[self.app].get(key), value
+                "storing %s: changed from [%s] to [%s]",
+                key,
+                relation.data[self.app].get(key),
+                value,
             )
             # TODO: is this needed for every relation? app data should be the same for all
             relation.data[self.app][key] = value
