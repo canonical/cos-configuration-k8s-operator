@@ -82,5 +82,6 @@ async def test_dashboard_files_ingested_by_grafana(ops_test):
 
     # now, make sure dashboards are present
     all_dashboards = await client.dashboards_all()
-    logger.info("All dashboards: %s", all_dashboards)
-    assert len(all_dashboards) > 0
+    dashboard_titles = [dash["title"] for dash in all_dashboards]
+    assert "up without dropdowns" in dashboard_titles
+    assert "up with dropdowns" in dashboard_titles
