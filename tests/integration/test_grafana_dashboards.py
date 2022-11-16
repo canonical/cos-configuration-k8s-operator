@@ -45,7 +45,7 @@ async def test_relating_to_grafana(ops_test):
     await ops_test.model.wait_for_idle(apps=["grafana"], status="active", timeout=1000)
 
 
-async def test_rule_files_ingested_by_grafana(ops_test):
+async def test_dashboard_files_ingested_by_grafana(ops_test):
     action = await ops_test.model.applications["grafana"].units[0].run_action("get-admin-password")
     await action.wait()
     admin_output = await ops_test.model.get_action_output(action.id)
@@ -68,8 +68,8 @@ async def test_rule_files_ingested_by_grafana(ops_test):
         }
     )
 
-    # now grafana should go back to active, but cos-config might still blocked if files showed up
-    # on disk after the last hook fired
+    # now grafana should go back to active, but cos-config might still be blocked if files showed
+    # up on disk after the last hook fired
     await ops_test.model.wait_for_idle(apps=["grafana"], status="active", timeout=1000)
 
     # in case the files show up on disk after the last hook fired, have an update_status fire now
@@ -81,4 +81,6 @@ async def test_rule_files_ingested_by_grafana(ops_test):
     await ops_test.model.wait_for_idle(status="active", timeout=1000)
 
     # now, make sure dashboards are present
-    assert len(await client.dashboards_all()) > 0
+    all_dashboards = await client.dashboards_all()
+    logger.info("All dashboards: %s", all_dashboards)
+    assert len(all_dashboards) > 0
