@@ -63,7 +63,7 @@ async def test_dashboard_files_ingested_by_grafana(ops_test):
     await ops_test.model.applications[app_name].set_config(
         {
             "git_repo": "https://github.com/canonical/cos-configuration-k8s-operator.git",
-            "git_branch": "main",
+            "git_branch": "feature/reinit_grafana_after_startup",
             "grafana_dashboards_path": "tests/samples/grafana_dashboards",
         }
     )
