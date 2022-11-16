@@ -37,7 +37,7 @@ class ServiceRestartError(Exception):
 class SyncError(Exception):
     """Raised when git-sync command fails."""
 
-    def __init__(self, message: str, details: str = None):
+    def __init__(self, message: str, details: Optional[str] = None):
         self.message = f"Sync error: {message}"
         self.details = details
 
