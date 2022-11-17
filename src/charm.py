@@ -337,10 +337,10 @@ class COSConfigCharm(CharmBase):
     def _stored_set(self, key: str, value: str):
         """Update peer relation data with the given hash."""
         if not self.unit.is_leader():
-            logger.info("store %s: abort: not leader", key)
+            logger.debug("store %s: abort: not leader", key)
             return
         for relation in self.model.relations[self._peer_relation_name]:
-            logger.info(
+            logger.debug(
                 "storing %s: changed from [%s] to [%s]",
                 key,
                 relation.data[self.app].get(key),
