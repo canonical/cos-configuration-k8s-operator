@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # Copyright 2021 Canonical Ltd.
 # See LICENSE file for licensing details.
-from typing import Optional
+from typing import List, Optional
 
 import aiohttp
 from urllib3 import make_headers
@@ -77,11 +77,21 @@ class Grafana:
                 result = await response.json()
                 return result if response.status == 200 else []
 
-    async def dashboards_all(self) -> list:
+    async def dashboards_all(self) -> List[dict]:
         """Try to get 'all' dashboards, since relation dashboards are not starred.
 
         Returns:
-          Found dashboards, if any
+          Found dashboards, if any. Output looks like this:
+            [{'id': 1,
+              'isStarred': False,
+              'slug': '',
+              'sortMeta': 0,
+              'tags': [],
+              'title': 'Grafana Tester',
+              'type': 'dash-db',
+              'uid': '45a205061ca32248',
+              'uri': 'db/grafana-tester',
+              'url': '/d/45a205061ca32248/grafana-tester'}]
         """
         api_path = "api/search"
         uri = "{}/{}".format(self.base_uri, api_path)
