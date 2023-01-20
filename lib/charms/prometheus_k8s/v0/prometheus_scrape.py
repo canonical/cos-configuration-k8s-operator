@@ -1,6 +1,6 @@
 # Copyright 2021 Canonical Ltd.
 # See LICENSE file for licensing details.
-"""Source code can be found on GitHub at canonical/observability-libs/lib/charms/observability_libs.
+"""Prometheus Scrape Library.
 
 ## Overview
 
@@ -12,6 +12,11 @@ currently integrated charms. Finally this document is the
 authoritative reference on the structure of relation data that is
 shared between Prometheus charms and any other charm that intends to
 provide a scrape target for Prometheus.
+
+## Source code
+
+Source code can be found on GitHub at:
+ https://github.com/canonical/prometheus-k8s-operator/tree/main/lib/charms/prometheus_k8s
 
 ## Dependencies
 
@@ -354,7 +359,7 @@ LIBAPI = 0
 
 # Increment this PATCH version before using `charmcraft publish-lib` or reset
 # to 0 if you are raising the major API version
-LIBPATCH = 25
+LIBPATCH = 27
 
 logger = logging.getLogger(__name__)
 
@@ -453,7 +458,7 @@ class PrometheusConfig:
     def expand_wildcard_targets_into_individual_jobs(
         scrape_jobs: List[dict],
         hosts: Dict[str, Tuple[str, str]],
-        topology: JujuTopology = None,
+        topology: Optional[JujuTopology] = None,
     ) -> List[dict]:
         """Extract wildcard hosts from the given scrape_configs list into separate jobs.
 
@@ -1384,7 +1389,7 @@ class MetricsEndpointProvider(Object):
         alert_rules_path: str = DEFAULT_ALERT_RULES_RELATIVE_PATH,
         refresh_event: Optional[Union[BoundEvent, List[BoundEvent]]] = None,
         external_url: str = "",
-        lookaside_jobs_callable: Callable = None,
+        lookaside_jobs_callable: Optional[Callable] = None,
     ):
         """Construct a metrics provider for a Prometheus charm.
 
