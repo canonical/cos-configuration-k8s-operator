@@ -86,6 +86,20 @@ Currently, supported relations are:
 - `loki-config`, for interfacing with [loki][Loki operator].
 - `grafana-dashboards`, for interfacing with [grafana][Grafana operator].
 
+
+### About Juju Topology
+
+This charm forwards alert rules, recording rules and dashboards but does not add its own metadata to the topology.
+
+The [Juju topology](https://charmhub.io/observability-libs/libraries/juju_topology) describes a node in the model, not the data flow.
+
+For this charm we don’t want this as it:
+
+1. Increases cardinality.
+2. Points at the wrong node in the model.
+
+On the other hand, adding annotations (or labels) using different nomenclature that describes how it got into the model (like: `origin`, `git-url`, `git-branch`, `sync-time`).
+
 ## OCI Images
 This charm can be used with the following image:
 - `k8s.gcr.io/git-sync/git-sync:v3.5.0`
