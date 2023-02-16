@@ -91,14 +91,12 @@ Currently, supported relations are:
 
 This charm forwards alert rules, recording rules and dashboards but does not add its own metadata to the topology.
 
-The [Juju topology](https://charmhub.io/observability-libs/libraries/juju_topology) describes a node in the model, not the data flow.
+The [Juju topology](https://charmhub.io/observability-libs/libraries/juju_topology) describes a node in the model, not the data flow. That's why this charm does not inject Juju topology.
 
-For this charm we don’t want this as it:
-
-1. Increases cardinality.
-2. Points at the wrong node in the model.
+Since a cos-configurator _app_ needs to be deployed per app, topology labels _could_ be used to give a since of origin (as in data flow). However, this would be semantically inconsistent with charms, where topology labels indicate a node in the model. This may unpredictably interfere with `group_by` directive.
 
 On the other hand, the juju administrator may add annotations (or labels) to alert rules, recording rules and dashboards using different nomenclature that describes how it got into the model (like: `origin`, `giturl`, `branch`, `synctime`).
+
 
 ## OCI Images
 This charm can be used with the following image:
