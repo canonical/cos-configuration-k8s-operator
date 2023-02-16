@@ -98,7 +98,7 @@ For this charm we don’t want this as it:
 1. Increases cardinality.
 2. Points at the wrong node in the model.
 
-On the other hand, adding annotations (or labels) using different nomenclature that describes how it got into the model (like: `origin`, `git-url`, `git-branch`, `sync-time`).
+On the other hand, the juju administrator may add annotations (or labels) to alert rules, recording rules and dashboards using different nomenclature that describes how it got into the model (like: `origin`, `giturl`, `branch`, `synctime`).
 
 ## OCI Images
 This charm can be used with the following image:
