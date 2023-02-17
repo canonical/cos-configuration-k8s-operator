@@ -93,7 +93,7 @@ This charm forwards alert rules, recording rules and dashboards but does not add
 
 The [Juju topology](https://charmhub.io/observability-libs/libraries/juju_topology) describes a node in the model, not the data flow. That's why this charm does not inject Juju topology.
 
-While a cos-configuration charm provides alerting rules, recording rules, and dashboards for charms, and topology labels _could_ be used to give a since of origin (as in data flow), the cos-configuration _deployment_ itself is neither enriched with nor aware of suitable values for metadata to identify workloads. 
+While a cos-configuration charm provides alerting rules, recording rules, and dashboards for charms, and topology labels _could_ be used to give a sense of origin (as in data flow), the cos-configuration _deployment_ itself is neither enriched with nor aware of suitable values for metadata to identify workloads. 
 
 In addition, the ability of `cos-configuration` to provide rules and dashboards which are not intrinsically tied to topology metadata offers administrators the flexibility to use COS to monitor non-charmed applications, use rules or dashboards directly from other sources, implement aggregate dashboards or rules which may collate metrics from more than one application, and more.
 
