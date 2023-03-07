@@ -32,7 +32,7 @@ async def test_kubectl_delete_pod(ops_test: OpsTest):
 
     cmd = [
         "sg",
-        "microk8s",
+        "snap_microk8s",
         "-c",
         " ".join(["microk8s.kubectl", "delete", "pod", "-n", ops_test.model_name, pod_name]),
     ]
