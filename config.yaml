@@ -22,7 +22,7 @@ options:
   git_ssh_key:
     type: string
     description: >
-      An optional SSH key to use to clone the repository.
+      An optional SSH private key to use when cloning the repository.
   prometheus_alert_rules_path:
     type: string
     description: Relative path in repo to prometheus rules.

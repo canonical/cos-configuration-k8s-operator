@@ -9,6 +9,7 @@ import logging
 import os
 import re
 import shutil
+from pathlib import Path
 from typing import Final, List, Optional, Tuple, cast
 
 from charms.grafana_k8s.v0.grafana_dashboard import GrafanaDashboardProvider
@@ -64,7 +65,7 @@ class COSConfigCharm(CharmBase):
     grafana_relation_name = "grafana-dashboards"
 
     _hash_placeholder = "failed to fetch hash"
-    _ssh_key_file_name = "cos-config-ssh-key"
+    _ssh_key_file_name = "cos-config-ssh-key.priv"
 
     def __init__(self, *args):
         super().__init__(*args)
@@ -411,8 +412,7 @@ class COSConfigCharm(CharmBase):
         """Save SSH key from config to a file."""
         ssh_key = self.config.get("git_ssh_key")
         if ssh_key:
-            with open(self._ssh_key_file_name, "w") as output:
-                output.write(ssh_key)
+            Path(self._ssh_key_file_name).write_text(ssh_key)
 
     @property
     def _git_sync_version(self) -> Optional[str]:
