@@ -19,6 +19,10 @@ options:
       Cloning depth, to truncate commit history to the specified number of commits.
       Zero means no truncating.
     default: 1
+  git_ssh_key:
+    type: string
+    description: >
+      An optional SSH key to use to clone the repository.
   prometheus_alert_rules_path:
     type: string
     description: Relative path in repo to prometheus rules.
