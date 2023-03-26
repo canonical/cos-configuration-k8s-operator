@@ -139,6 +139,7 @@ class COSConfigCharm(CharmBase):
             self.loki_relation_name,
             alert_rules_path=os.path.join(self._repo_path, self.config["loki_alert_rules_path"]),
             recursive=True,
+            skip_alert_topology_labeling=True,
         )
 
         self.grafana_dashboards_provider = GrafanaDashboardProvider(
