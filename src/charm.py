@@ -410,9 +410,8 @@ class COSConfigCharm(CharmBase):
 
     def _save_ssh_key(self):
         """Save SSH key from config to a file."""
-        ssh_key = self.config.get("git_ssh_key")
-        if ssh_key:
-            Path(self._ssh_key_file_name).write_text(ssh_key)
+        ssh_key = self.config.get("git_ssh_key", "")
+        self.container.push(Path(self._ssh_key_file_name), ssh_key)
 
     @property
     def _git_sync_version(self) -> Optional[str]:
