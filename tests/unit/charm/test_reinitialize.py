@@ -10,6 +10,7 @@ from unittest.mock import patch
 
 import hypothesis.strategies as st
 import ops
+from charm import COSConfigCharm
 from charms.grafana_k8s.v0.grafana_dashboard import GrafanaDashboardProvider
 from charms.loki_k8s.v0.loki_push_api import LokiPushApiConsumer
 from charms.prometheus_k8s.v0.prometheus_scrape import PrometheusRulesProvider
@@ -17,8 +18,6 @@ from helpers import FakeProcessVersionCheck
 from hypothesis import given
 from ops.model import Container
 from ops.testing import Harness
-
-from charm import COSConfigCharm
 
 logger = logging.getLogger(__name__)
 
