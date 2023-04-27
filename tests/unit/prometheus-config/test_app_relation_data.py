@@ -71,6 +71,7 @@ class TestAppRelationData(unittest.TestCase):
         """Scenario: Alert rules show up show up on disk only after config_changed etc. fired."""
         # GIVEN the current unit is the leader
         self.harness.set_leader(True)
+        self.harness.begin_with_initial_hooks()
 
         # AND prometheus-config relation formed
         rel_id = self.harness.add_relation("prometheus-config", "prom")
@@ -102,6 +103,7 @@ class TestAppRelationData(unittest.TestCase):
         """Scenario: Files are on disk and the charm is blocked, but now a relation joins."""
         # GIVEN the current unit is the leader
         self.harness.set_leader(True)
+        self.harness.begin_with_initial_hooks()
 
         # AND the user configures the repo url
         self.harness.update_config({"git_repo": "http://does.not.really.matter/repo.git"})
@@ -127,6 +129,7 @@ class TestAppRelationData(unittest.TestCase):
         """Scenario: A relation joins first, and only then the repo url is set."""
         # GIVEN the current unit is the leader
         self.harness.set_leader(True)
+        self.harness.begin_with_initial_hooks()
 
         # AND a relation joins
         for rel_name in [

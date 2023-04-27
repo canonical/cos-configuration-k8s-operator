@@ -21,9 +21,9 @@ class TestWorkloadVersion(unittest.TestCase):
     @patch.object(Container, "exec", new=FakeProcessVersionCheck)
     def setUp(self):
         self.harness = Harness(COSConfigCharm)
+        self.harness.begin_with_initial_hooks()
         self.addCleanup(self.harness.cleanup)
         self.harness.add_storage("content-from-git", attach=True)
-        self.harness.begin_with_initial_hooks()
         self.harness.container_pebble_ready("git-sync")
 
     def test_workload_version_is_set(self):

@@ -45,11 +45,11 @@ class TestReinitializeCalledOnce(unittest.TestCase):
 
         # GIVEN the current unit is a leader unit
         self.harness.set_leader(True)
+        self.harness.begin_with_initial_hooks()
 
         # AND storage is attached
         self.harness.add_storage("content-from-git", attach=True)
 
-        self.harness.begin_with_initial_hooks()
         self.harness.container_pebble_ready("git-sync")
 
         # without the try-finally, if any assertion fails, then hypothesis would reenter without
@@ -93,11 +93,11 @@ class TestReinitializeCalledOnce(unittest.TestCase):
 
         # GIVEN the current unit is a leader unit
         self.harness.set_leader(True)
+        self.harness.begin_with_initial_hooks()
 
         # AND storage is attached
         self.harness.add_storage("content-from-git", attach=True)
 
-        self.harness.begin_with_initial_hooks()
         self.harness.container_pebble_ready("git-sync")
 
         # without the try-finally, if any assertion fails, then hypothesis would reenter without
@@ -154,11 +154,11 @@ class TestReinitializeCalledOnce(unittest.TestCase):
 
         # GIVEN the current unit is a leader unit
         self.harness.set_leader(True)
+        self.harness.begin_with_initial_hooks()
 
         # AND storage is attached
         self.harness.add_storage("content-from-git", attach=True)
 
-        self.harness.begin_with_initial_hooks()
         self.harness.container_pebble_ready("git-sync")
 
         # without the try-finally, if any assertion fails, then hypothesis would reenter without
@@ -237,11 +237,11 @@ class TestConfigChanged(unittest.TestCase):
         try:
             # GIVEN the current unit is a leader unit
             self.harness.set_leader(True)
+            self.harness.begin_with_initial_hooks()
 
             # AND storage is attached
             self.harness.add_storage("content-from-git", attach=True)
 
-            self.harness.begin_with_initial_hooks()
             self.harness.container_pebble_ready("git-sync")
 
             # AND some initial config is provided
