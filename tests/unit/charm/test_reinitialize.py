@@ -10,6 +10,7 @@ from unittest.mock import patch
 
 import hypothesis.strategies as st
 import ops
+from charm import COSConfigCharm
 from charms.grafana_k8s.v0.grafana_dashboard import GrafanaDashboardProvider
 from charms.loki_k8s.v0.loki_push_api import LokiPushApiConsumer
 from charms.prometheus_k8s.v0.prometheus_scrape import PrometheusRulesProvider
@@ -17,8 +18,6 @@ from helpers import FakeProcessVersionCheck
 from hypothesis import given
 from ops.model import Container
 from ops.testing import Harness
-
-from charm import COSConfigCharm
 
 logger = logging.getLogger(__name__)
 
@@ -46,11 +45,11 @@ class TestReinitializeCalledOnce(unittest.TestCase):
 
         # GIVEN the current unit is a leader unit
         self.harness.set_leader(True)
+        self.harness.begin_with_initial_hooks()
 
         # AND storage is attached
         self.harness.add_storage("content-from-git", attach=True)
 
-        self.harness.begin_with_initial_hooks()
         self.harness.container_pebble_ready("git-sync")
 
         # without the try-finally, if any assertion fails, then hypothesis would reenter without
@@ -94,11 +93,11 @@ class TestReinitializeCalledOnce(unittest.TestCase):
 
         # GIVEN the current unit is a leader unit
         self.harness.set_leader(True)
+        self.harness.begin_with_initial_hooks()
 
         # AND storage is attached
         self.harness.add_storage("content-from-git", attach=True)
 
-        self.harness.begin_with_initial_hooks()
         self.harness.container_pebble_ready("git-sync")
 
         # without the try-finally, if any assertion fails, then hypothesis would reenter without
@@ -155,11 +154,11 @@ class TestReinitializeCalledOnce(unittest.TestCase):
 
         # GIVEN the current unit is a leader unit
         self.harness.set_leader(True)
+        self.harness.begin_with_initial_hooks()
 
         # AND storage is attached
         self.harness.add_storage("content-from-git", attach=True)
 
-        self.harness.begin_with_initial_hooks()
         self.harness.container_pebble_ready("git-sync")
 
         # without the try-finally, if any assertion fails, then hypothesis would reenter without
@@ -238,11 +237,11 @@ class TestConfigChanged(unittest.TestCase):
         try:
             # GIVEN the current unit is a leader unit
             self.harness.set_leader(True)
+            self.harness.begin_with_initial_hooks()
 
             # AND storage is attached
             self.harness.add_storage("content-from-git", attach=True)
 
-            self.harness.begin_with_initial_hooks()
             self.harness.container_pebble_ready("git-sync")
 
             # AND some initial config is provided

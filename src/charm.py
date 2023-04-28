@@ -195,7 +195,7 @@ class COSConfigCharm(CharmBase):
         if not self.container.can_connect():
             event.fail("Container not ready")
             return
-        elif not self._configured:
+        if not self._configured:
             event.fail("Config options missing - use `juju config`")
             return
 
@@ -332,9 +332,8 @@ class COSConfigCharm(CharmBase):
 
         if match := re.match(".+/(.+)$", contents):
             return match.group(1)
-        else:
-            logger.debug("Unrecognized hash file format: %s", contents[:100])
-            return self._hash_placeholder
+        logger.debug("Unrecognized hash file format: %s", contents[:100])
+        return self._hash_placeholder
 
     def _stored_get(self, key: str) -> Optional[str]:
         if relation := self.model.get_relation(self._peer_relation_name):

@@ -11,12 +11,11 @@ from unittest.mock import patch
 
 import hypothesis.strategies as st
 import ops
+from charm import COSConfigCharm
 from helpers import FakeProcessVersionCheck
 from hypothesis import given
 from ops.model import ActiveStatus, BlockedStatus, Container
 from ops.testing import Harness
-
-from charm import COSConfigCharm
 
 logger = logging.getLogger(__name__)
 
@@ -51,11 +50,11 @@ class TestBlockedStatus(unittest.TestCase):
 
             # AND the current unit could be either a leader or not
             self.harness.set_leader(is_leader)
+            self.harness.begin_with_initial_hooks()
 
             # AND storage is attached
             self.harness.add_storage("content-from-git", attach=True)
 
-            self.harness.begin_with_initial_hooks()
             self.harness.container_pebble_ready("git-sync")
 
             # WHEN no config is provided
@@ -111,12 +110,12 @@ class TestRandomHooks(unittest.TestCase):
 
         # GIVEN app starts with a single unit (which is the leader)
         self.harness.set_leader(True)
+        self.harness.begin_with_initial_hooks()
 
         # AND storage is attached
         self.harness.add_storage("content-from-git", attach=True)
 
         # AND the usual startup hooks fire
-        self.harness.begin_with_initial_hooks()
         self.harness.container_pebble_ready("git-sync")
 
         try:
@@ -198,6 +197,7 @@ class TestStatusVsConfig(unittest.TestCase):
 
             # AND the current unit could be either a leader or not
             self.harness.set_leader(is_leader)
+            self.harness.begin_with_initial_hooks()
 
             # WHEN the repo URL is set
             self.harness.update_config({"git_repo": "http://does.not.really.matter/repo.git"})
@@ -231,6 +231,7 @@ class TestStatusVsConfig(unittest.TestCase):
 
             # AND the current unit is a leader (otherwise won't be able to update app data)
             self.harness.set_leader(True)
+            self.harness.begin_with_initial_hooks()
 
             # WHEN the repo URL is set
             self.harness.update_config({"git_repo": "http://does.not.really.matter/repo.git"})
