@@ -91,7 +91,9 @@ class COSConfigCharm(CharmBase):
         self.framework.observe(self.on.upgrade_charm, self._on_upgrade_charm)
         self.framework.observe(self.on.leader_elected, self._on_leader_changed)
         self.framework.observe(self.on.leader_settings_changed, self._on_leader_changed)
-        self.framework.observe(self.on.git_sync_pebble_ready, self._on_git_sync_pebble_ready)
+        self.framework.observe(
+            self.on.git_sync_pebble_ready, self._on_git_sync_pebble_ready  # pyright: ignore
+        )
         self.framework.observe(self.on.start, self._on_start)
         self.framework.observe(self.on.update_status, self._on_update_status)
 
@@ -111,7 +113,9 @@ class COSConfigCharm(CharmBase):
             self.framework.observe(e, self._on_relation_joined)
 
         # Action events
-        self.framework.observe(self.on.sync_now_action, self._on_sync_now_action)
+        self.framework.observe(
+            self.on.sync_now_action, self._on_sync_now_action  # pyright: ignore
+        )
 
         # logger.info("repo location: [%s]", self.meta.storages["content-from-git"].location)
 
