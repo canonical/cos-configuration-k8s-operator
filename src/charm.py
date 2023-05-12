@@ -69,7 +69,6 @@ class COSConfigCharm(CharmBase):
 
     def __init__(self, *args):
         super().__init__(*args)
-
         # Path to the repo in the _charm_ container, which is needed for instantiating
         # PrometheusRulesProvider with the rule files (otherwise would need to fetch via pebble
         # every time).
