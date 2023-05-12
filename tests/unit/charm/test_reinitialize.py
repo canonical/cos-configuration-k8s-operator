@@ -56,12 +56,8 @@ class TestReinitializeCalledOnce(unittest.TestCase):
 
         # GIVEN the current unit is a leader unit
         self.harness.set_leader(True)
-        self.harness.begin_with_initial_hooks()
-
-        # AND storage is attached
         self.harness.add_storage("content-from-git", attach=True)
-
-        self.harness.container_pebble_ready("git-sync")
+        self.harness.begin_with_initial_hooks()
 
         # without the try-finally, if any assertion fails, then hypothesis would reenter without
         # the cleanup, carrying forward the units that were previously added
@@ -100,12 +96,8 @@ class TestReinitializeCalledOnce(unittest.TestCase):
 
         # GIVEN the current unit is a leader unit
         self.harness.set_leader(True)
-        self.harness.begin_with_initial_hooks()
-
-        # AND storage is attached
         self.harness.add_storage("content-from-git", attach=True)
-
-        self.harness.container_pebble_ready("git-sync")
+        self.harness.begin_with_initial_hooks()
 
         # without the try-finally, if any assertion fails, then hypothesis would reenter without
         # the cleanup, carrying forward the units that were previously added
@@ -157,12 +149,8 @@ class TestReinitializeCalledOnce(unittest.TestCase):
 
         # GIVEN the current unit is a leader unit
         self.harness.set_leader(True)
-        self.harness.begin_with_initial_hooks()
-
-        # AND storage is attached
         self.harness.add_storage("content-from-git", attach=True)
-
-        self.harness.container_pebble_ready("git-sync")
+        self.harness.begin_with_initial_hooks()
 
         # without the try-finally, if any assertion fails, then hypothesis would reenter without
         # the cleanup, carrying forward the units that were previously added
@@ -251,12 +239,8 @@ class TestConfigChanged(unittest.TestCase):
         try:
             # GIVEN the current unit is a leader unit
             self.harness.set_leader(True)
-            self.harness.begin_with_initial_hooks()
-
-            # AND storage is attached
             self.harness.add_storage("content-from-git", attach=True)
-
-            self.harness.container_pebble_ready("git-sync")
+            self.harness.begin_with_initial_hooks()
 
             # AND some initial config is provided
             fake_repo_url = "http://does.not.really.matter/repo.git"
