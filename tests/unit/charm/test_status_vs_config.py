@@ -27,8 +27,12 @@ class TestBlockedStatus(unittest.TestCase):
     As long as it is missing, the charm should be "Blocked".
     """
 
+    def setUp(self):
+        patcher = patch.object(COSConfigCharm, "_git_sync_version", property(lambda *_: "1.2.3"))
+        self.mock_version = patcher.start()
+        self.addCleanup(patcher.stop)
+
     @patch("charm.KubernetesServicePatch", lambda x, y: None)
-    @patch.object(Container, "exec", new=FakeProcessVersionCheck)
     @given(st.booleans(), st.integers(1, 5))
     def test_unit_is_blocked_if_no_config_provided(self, is_leader, num_units):
         """Scenario: Unit is deployed without any user-provided config."""
@@ -48,12 +52,8 @@ class TestBlockedStatus(unittest.TestCase):
 
             # AND the current unit could be either a leader or not
             self.harness.set_leader(is_leader)
-            self.harness.begin_with_initial_hooks()
-
-            # AND storage is attached
             self.harness.add_storage("content-from-git", attach=True)
-
-            self.harness.container_pebble_ready("git-sync")
+            self.harness.begin_with_initial_hooks()
 
             # WHEN no config is provided
 
@@ -76,8 +76,12 @@ class TestRandomHooks(unittest.TestCase):
     As long as it is missing, the charm should be "Blocked".
     """
 
+    def setUp(self):
+        patcher = patch.object(COSConfigCharm, "_git_sync_version", property(lambda *_: "1.2.3"))
+        self.mock_version = patcher.start()
+        self.addCleanup(patcher.stop)
+
     @patch("charm.KubernetesServicePatch", lambda x, y: None)
-    @patch.object(Container, "exec", new=FakeProcessVersionCheck)
     @given(
         st.booleans(),
         st.integers(1, 5),
@@ -108,10 +112,8 @@ class TestRandomHooks(unittest.TestCase):
 
         # GIVEN app starts with a single unit (which is the leader)
         self.harness.set_leader(True)
-        self.harness.begin_with_initial_hooks()
-
-        # AND storage is attached
         self.harness.add_storage("content-from-git", attach=True)
+        self.harness.begin_with_initial_hooks()
 
         # AND the usual startup hooks fire
         self.harness.container_pebble_ready("git-sync")
