@@ -65,7 +65,7 @@ class COSConfigCharm(CharmBase):
     grafana_relation_name = "grafana-dashboards"
 
     _hash_placeholder = "failed to fetch hash"
-    _ssh_key_file_name = "cos-config-ssh-key.priv"
+    _ssh_key_file_name = "/run/cos-config-ssh-key.priv"
 
     def __init__(self, *args):
         super().__init__(*args)
@@ -409,13 +409,14 @@ class COSConfigCharm(CharmBase):
 
     def _on_config_changed(self, _):
         """Event handler for ConfigChangedEvent."""
-        self._save_ssh_key()
+        if self.container.can_connect():
+            self._save_ssh_key()
         self._common_exit_hook()
 
     def _save_ssh_key(self):
         """Save SSH key from config to a file."""
         ssh_key = self.config.get("git_ssh_key", "")
-        self.container.push(Path(self._ssh_key_file_name), ssh_key)
+        self.container.push(Path(self._ssh_key_file_name), ssh_key, make_dirs=True)
 
     @property
     def _git_sync_version(self) -> Optional[str]:
