@@ -10,7 +10,6 @@ from typing import List, Tuple
 from unittest.mock import patch
 
 import hypothesis.strategies as st
-import ops
 from charm import COSConfigCharm
 from helpers import FakeProcessVersionCheck
 from hypothesis import given
@@ -195,9 +194,7 @@ class TestStatusVsConfig(unittest.TestCase):
 
         # GIVEN any number of units present
         for i in range(1, num_units):
-            self.harness.add_relation_unit(
-                self.peer_rel_id, f"{self.harness.model.app.name}/{i}"
-            )
+            self.harness.add_relation_unit(self.peer_rel_id, f"{self.harness.model.app.name}/{i}")
 
         # AND the current unit could be either a leader or not
         self.harness.set_leader(is_leader)

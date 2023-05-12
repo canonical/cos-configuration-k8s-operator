@@ -5,10 +5,7 @@
 import unittest
 from unittest.mock import patch
 
-import ops
 from charm import COSConfigCharm
-from helpers import FakeProcessVersionCheck
-from ops.model import Container
 from ops.testing import Harness
 
 
