@@ -127,11 +127,6 @@ class COSConfigCharm(CharmBase):
         # Path to the hash file in the _charm_ container
         self._git_hash_file_path = os.path.join(self._repo_path, ".git")
 
-        # path to the root storage of the git-sync _sidecar_ container
-        self._git_sync_mount_point_sidecar = (
-            self.meta.containers[self._container_name].mounts["content-from-git"].location
-        )
-
         self.prom_rules_provider = PrometheusRulesProvider(
             self,
             self.prometheus_relation_name,
@@ -157,6 +152,11 @@ class COSConfigCharm(CharmBase):
             self,
             [(f"{self.app.name}-git-sync", self._git_sync_port, self._git_sync_port)],
         )
+
+    @property
+    def _git_sync_mount_point_sidecar(self):
+        """Path to the root storage of the git-sync _sidecar_ container."""
+        return self.meta.containers[self._container_name].mounts["content-from-git"].location
 
     def _common_exit_hook(self) -> None:  # noqa: C901
         """Event processing hook that is common to all events to ensure idempotency."""
