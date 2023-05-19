@@ -65,11 +65,10 @@ class COSConfigCharm(CharmBase):
     grafana_relation_name = "grafana-dashboards"
 
     _hash_placeholder = "failed to fetch hash"
-    _ssh_key_file_name = "cos-config-ssh-key.priv"
+    _ssh_key_file_name = "/run/cos-config-ssh-key.priv"
 
     def __init__(self, *args):
         super().__init__(*args)
-
         # Path to the repo in the _charm_ container, which is needed for instantiating
         # PrometheusRulesProvider with the rule files (otherwise would need to fetch via pebble
         # every time).
@@ -91,7 +90,9 @@ class COSConfigCharm(CharmBase):
         self.framework.observe(self.on.upgrade_charm, self._on_upgrade_charm)
         self.framework.observe(self.on.leader_elected, self._on_leader_changed)
         self.framework.observe(self.on.leader_settings_changed, self._on_leader_changed)
-        self.framework.observe(self.on.git_sync_pebble_ready, self._on_git_sync_pebble_ready)
+        self.framework.observe(
+            self.on.git_sync_pebble_ready, self._on_git_sync_pebble_ready  # pyright: ignore
+        )
         self.framework.observe(self.on.start, self._on_start)
         self.framework.observe(self.on.update_status, self._on_update_status)
 
@@ -111,7 +112,9 @@ class COSConfigCharm(CharmBase):
             self.framework.observe(e, self._on_relation_joined)
 
         # Action events
-        self.framework.observe(self.on.sync_now_action, self._on_sync_now_action)
+        self.framework.observe(
+            self.on.sync_now_action, self._on_sync_now_action  # pyright: ignore
+        )
 
         # logger.info("repo location: [%s]", self.meta.storages["content-from-git"].location)
 
@@ -123,11 +126,6 @@ class COSConfigCharm(CharmBase):
         # A change in the contents of that file is an indication for a change.
         # Path to the hash file in the _charm_ container
         self._git_hash_file_path = os.path.join(self._repo_path, ".git")
-
-        # path to the root storage of the git-sync _sidecar_ container
-        self._git_sync_mount_point_sidecar = (
-            self.meta.containers[self._container_name].mounts["content-from-git"].location
-        )
 
         self.prom_rules_provider = PrometheusRulesProvider(
             self,
@@ -154,6 +152,11 @@ class COSConfigCharm(CharmBase):
             self,
             [(f"{self.app.name}-git-sync", self._git_sync_port, self._git_sync_port)],
         )
+
+    @property
+    def _git_sync_mount_point_sidecar(self):
+        """Path to the root storage of the git-sync _sidecar_ container."""
+        return self.meta.containers[self._container_name].mounts["content-from-git"].location
 
     def _common_exit_hook(self) -> None:  # noqa: C901
         """Event processing hook that is common to all events to ensure idempotency."""
@@ -405,13 +408,14 @@ class COSConfigCharm(CharmBase):
 
     def _on_config_changed(self, _):
         """Event handler for ConfigChangedEvent."""
-        self._save_ssh_key()
+        if self.container.can_connect():
+            self._save_ssh_key()
         self._common_exit_hook()
 
     def _save_ssh_key(self):
         """Save SSH key from config to a file."""
         ssh_key = self.config.get("git_ssh_key", "")
-        self.container.push(Path(self._ssh_key_file_name), ssh_key)
+        self.container.push(Path(self._ssh_key_file_name), ssh_key, make_dirs=True)
 
     @property
     def _git_sync_version(self) -> Optional[str]:

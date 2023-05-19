@@ -10,7 +10,6 @@ from typing import List, Tuple
 from unittest.mock import patch
 
 import hypothesis.strategies as st
-import ops
 from charm import COSConfigCharm
 from helpers import FakeProcessVersionCheck
 from hypothesis import given
@@ -18,8 +17,6 @@ from ops.model import ActiveStatus, BlockedStatus, Container
 from ops.testing import Harness
 
 logger = logging.getLogger(__name__)
-
-ops.testing.SIMULATE_CAN_CONNECT = True
 
 
 class TestBlockedStatus(unittest.TestCase):
@@ -29,8 +26,12 @@ class TestBlockedStatus(unittest.TestCase):
     As long as it is missing, the charm should be "Blocked".
     """
 
+    def setUp(self):
+        patcher = patch.object(COSConfigCharm, "_git_sync_version", property(lambda *_: "1.2.3"))
+        self.mock_version = patcher.start()
+        self.addCleanup(patcher.stop)
+
     @patch("charm.KubernetesServicePatch", lambda x, y: None)
-    @patch.object(Container, "exec", new=FakeProcessVersionCheck)
     @given(st.booleans(), st.integers(1, 5))
     def test_unit_is_blocked_if_no_config_provided(self, is_leader, num_units):
         """Scenario: Unit is deployed without any user-provided config."""
@@ -50,12 +51,8 @@ class TestBlockedStatus(unittest.TestCase):
 
             # AND the current unit could be either a leader or not
             self.harness.set_leader(is_leader)
-            self.harness.begin_with_initial_hooks()
-
-            # AND storage is attached
             self.harness.add_storage("content-from-git", attach=True)
-
-            self.harness.container_pebble_ready("git-sync")
+            self.harness.begin_with_initial_hooks()
 
             # WHEN no config is provided
 
@@ -78,8 +75,12 @@ class TestRandomHooks(unittest.TestCase):
     As long as it is missing, the charm should be "Blocked".
     """
 
+    def setUp(self):
+        patcher = patch.object(COSConfigCharm, "_git_sync_version", property(lambda *_: "1.2.3"))
+        self.mock_version = patcher.start()
+        self.addCleanup(patcher.stop)
+
     @patch("charm.KubernetesServicePatch", lambda x, y: None)
-    @patch.object(Container, "exec", new=FakeProcessVersionCheck)
     @given(
         st.booleans(),
         st.integers(1, 5),
@@ -110,10 +111,8 @@ class TestRandomHooks(unittest.TestCase):
 
         # GIVEN app starts with a single unit (which is the leader)
         self.harness.set_leader(True)
-        self.harness.begin_with_initial_hooks()
-
-        # AND storage is attached
         self.harness.add_storage("content-from-git", attach=True)
+        self.harness.begin_with_initial_hooks()
 
         # AND the usual startup hooks fire
         self.harness.container_pebble_ready("git-sync")
@@ -158,6 +157,7 @@ class TestRandomHooks(unittest.TestCase):
             self.harness.cleanup()
 
 
+@patch("charm.KubernetesServicePatch", lambda x, y: None)
 class TestStatusVsConfig(unittest.TestCase):
     """Feature: Charm's status should reflect the completeness of the config.
 
@@ -165,91 +165,71 @@ class TestStatusVsConfig(unittest.TestCase):
     As long as it is missing, the charm should be "Blocked".
     """
 
-    @patch("charm.KubernetesServicePatch", lambda x, y: None)
     @patch.object(Container, "exec", new=FakeProcessVersionCheck)
     def setUp(self):
+        patcher = patch.object(COSConfigCharm, "_git_sync_version", property(lambda *_: "0.0.0"))
+        self.mock_version = patcher.start()
+        self.addCleanup(patcher.stop)
+
+        # self.harness = Harness(COSConfigCharm)
+        # self.addCleanup(self.harness.cleanup)
+        #
+        # self.peer_rel_id = self.harness.add_relation("replicas", self.harness.model.app.name)
+        #
+        # self.harness.add_storage("content-from-git", attach=True)
+
+    def prep(self):
         self.harness = Harness(COSConfigCharm)
         self.addCleanup(self.harness.cleanup)
-
         self.peer_rel_id = self.harness.add_relation("replicas", self.harness.model.app.name)
-
         self.harness.add_storage("content-from-git", attach=True)
-
-        self.harness.begin_with_initial_hooks()
-        self.harness.container_pebble_ready("git-sync")
-
-        self.container_name = self.harness.charm._container_name
 
     @patch("charm.COSConfigCharm._exec_sync_repo", lambda *a, **kw: "", "")
     @given(st.booleans(), st.integers(1, 5))
     def test_unit_is_blocked_if_repo_url_provided_but_hash_missing(self, is_leader, num_units):
         """Scenario: Unit is deployed, the repo url config is set after, but hash file missing."""
-        # without the try-finally, if any assertion fails, then hypothesis would reenter without
-        # the cleanup, carrying forward the units that were previously added
-        try:
-            self.assertEqual(self.harness.model.app.planned_units(), 1)
+        self.prep()
 
-            # GIVEN any number of units present
-            for i in range(1, num_units):
-                self.harness.add_relation_unit(
-                    self.peer_rel_id, f"{self.harness.model.app.name}/{i}"
-                )
+        self.assertEqual(self.harness.model.app.planned_units(), 1)
 
-            # AND the current unit could be either a leader or not
-            self.harness.set_leader(is_leader)
-            self.harness.begin_with_initial_hooks()
+        # GIVEN any number of units present
+        for i in range(1, num_units):
+            self.harness.add_relation_unit(self.peer_rel_id, f"{self.harness.model.app.name}/{i}")
 
-            # WHEN the repo URL is set
-            self.harness.update_config({"git_repo": "http://does.not.really.matter/repo.git"})
+        # AND the current unit could be either a leader or not
+        self.harness.set_leader(is_leader)
+        self.harness.begin_with_initial_hooks()
 
-            # AND hash file missing
+        # WHEN the repo URL is set
+        self.harness.update_config({"git_repo": "http://does.not.really.matter/repo.git"})
 
-            # THEN the unit goes into blocked state
-            self.assertIsInstance(self.harness.charm.unit.status, BlockedStatus)
+        # AND hash file missing
 
-        finally:
-            # cleanup added units to prep for reentry by hypothesis' strategy
-            self.harness.set_leader(False)
-            for i in reversed(range(1, num_units)):
-                self.harness.remove_relation_unit(
-                    self.peer_rel_id, f"{self.harness.model.app.name}/{i}"
-                )
-            self.harness.update_config(unset=["git_repo"])
+        # THEN the unit goes into blocked state
+        self.assertIsInstance(self.harness.charm.unit.status, BlockedStatus)
 
     @patch("charm.COSConfigCharm._exec_sync_repo", lambda *a, **kw: "", "")
-    @given(st.integers(1, 5))
-    def test_unit_is_active_if_repo_url_provided_and_hash_present(self, num_units):
+    def test_unit_is_active_if_repo_url_provided_and_hash_present(self):
         """Scenario: Unit is deployed, the repo url config is set after, and hash file present."""
-        # without the try-finally, if any assertion fails, then hypothesis would reenter without
-        # the cleanup, carrying forward the units that were previously added
-        try:
-            self.assertEqual(self.harness.model.app.planned_units(), 1)
+        self.prep()
 
-            # GIVEN any number of units present
-            # for i in range(1, num_units):
-            #     self.harness.add_relation_unit(self.peer_rel_id, f"{self.app_name}/{i}")
+        self.assertEqual(self.harness.model.app.planned_units(), 1)
 
-            # AND the current unit is a leader (otherwise won't be able to update app data)
-            self.harness.set_leader(True)
-            self.harness.begin_with_initial_hooks()
+        # GIVEN the current unit is a leader (otherwise won't be able to update app data)
+        self.harness.set_leader(True)
+        self.harness.begin_with_initial_hooks()
 
-            # WHEN the repo URL is set
-            self.harness.update_config({"git_repo": "http://does.not.really.matter/repo.git"})
+        # WHEN the repo URL is set
+        self.harness.update_config({"git_repo": "http://does.not.really.matter/repo.git"})
 
-            # AND hash file present
-            container = self.harness.model.unit.get_container("git-sync")
-            hash_file_path = os.path.join(
-                self.harness.charm._git_sync_mount_point_sidecar, self.harness.charm.SUBDIR, ".git"
-            )
-            container.push(hash_file_path, "gitdir: ./abcd1234", make_dirs=True)
+        # AND hash file present
+        container = self.harness.model.unit.get_container("git-sync")
+        hash_file_path = os.path.join(
+            self.harness.charm._git_sync_mount_point_sidecar, self.harness.charm.SUBDIR, ".git"
+        )
+        container.push(hash_file_path, "gitdir: ./abcd1234", make_dirs=True)
 
-            # THEN the unit goes into active state
-            # first need to emit update-status because hash file showed up after hooks fired
-            self.harness.charm.on.update_status.emit()
-            self.assertIsInstance(self.harness.charm.unit.status, ActiveStatus)
-
-        finally:
-            # cleanup added units to prep for reentry by hypothesis' strategy
-            # for i in reversed(range(1, num_units)):
-            #     self.harness.remove_relation_unit(self.peer_rel_id, f"{self.app_name}/{i}")
-            self.harness.update_config(unset=["git_repo"])
+        # THEN the unit goes into active state
+        # first need to emit update-status because hash file showed up after hooks fired
+        self.harness.charm.on.update_status.emit()
+        self.assertIsInstance(self.harness.charm.unit.status, ActiveStatus)
