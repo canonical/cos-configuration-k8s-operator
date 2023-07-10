@@ -230,7 +230,7 @@ class COSConfigCharm(CharmBase):
         """
         return bool(self.config.get("git_repo"))
 
-    def _exec_sync_repo(self) -> Tuple[str, str]:
+    def _exec_sync_repo(self) -> Tuple[str, Optional[str]]:
         """Execute the sync command in the workload container.
 
         Raises:
