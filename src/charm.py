@@ -415,6 +415,8 @@ class COSConfigCharm(CharmBase):
     def _save_ssh_key(self):
         """Save SSH key from config to a file."""
         ssh_key = self.config.get("git_ssh_key", "")
+        # Key file must be readable by the user but not accessible by others.
+        # Ref: https://linux.die.net/man/1/ssh
         self.container.push(
             Path(self._ssh_key_file_name), ssh_key, permissions=0o600, make_dirs=True
         )
