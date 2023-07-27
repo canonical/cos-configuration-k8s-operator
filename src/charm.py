@@ -230,7 +230,7 @@ class COSConfigCharm(CharmBase):
         """
         return bool(self.config.get("git_repo"))
 
-    def _exec_sync_repo(self) -> Tuple[str, Optional[str]]:
+    def _exec_sync_repo(self) -> Tuple[str, str]:
         """Execute the sync command in the workload container.
 
         Raises:
@@ -256,7 +256,7 @@ class COSConfigCharm(CharmBase):
             for line in stderr.splitlines():
                 logger.info(f"git-sync: {line.strip()}")
 
-        return stdout, stderr
+        return stdout, stderr or ""
 
     def _remove_repo_folder(self):
         """Remove the repo folder."""
