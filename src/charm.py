@@ -418,6 +418,9 @@ class COSConfigCharm(CharmBase):
     def _trust_ssh_remote(self):
         """Cleanup known_hosts and add the remote public SSH key."""
         repo = cast(str, self.config.get("git_repo"))
+        # Parse remotes in different forms, specifically:
+        # - git@<remote>:<user>/...
+        # - git+ssh://<user>@<remote>/...
         remote_regex = r"@(.+?)[:/]"
         matches: list = re.findall(remote_regex, repo)
         if matches:
