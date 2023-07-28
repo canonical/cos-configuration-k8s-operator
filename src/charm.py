@@ -410,8 +410,9 @@ class COSConfigCharm(CharmBase):
     def _on_config_changed(self, _):
         """Event handler for ConfigChangedEvent."""
         if self.container.can_connect():
-            self._trust_ssh_remote()
-            self._save_ssh_key()
+            if self.config.get("git_ssh_key"):
+                self._trust_ssh_remote()
+                self._save_ssh_key()
         self._common_exit_hook()
 
     def _trust_ssh_remote(self):
