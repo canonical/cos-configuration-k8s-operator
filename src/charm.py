@@ -66,6 +66,7 @@ class COSConfigCharm(CharmBase):
 
     _hash_placeholder = "failed to fetch hash"
     _ssh_key_file_name = "/run/cos-config-ssh-key.priv"
+    _known_hosts_file = "/etc/git-secret/known_hosts"
 
     def __init__(self, *args):
         super().__init__(*args)
@@ -409,8 +410,26 @@ class COSConfigCharm(CharmBase):
     def _on_config_changed(self, _):
         """Event handler for ConfigChangedEvent."""
         if self.container.can_connect():
+            self._trust_ssh_remote()
             self._save_ssh_key()
         self._common_exit_hook()
+
+    def _trust_ssh_remote(self):
+        """Cleanup known_hosts and add the remote public SSH key."""
+        repo = cast(str, self.config.get("git_repo"))
+        remote_regex = r"@(.+?)[:/]"
+        matches: list = re.findall(remote_regex, repo)
+        if matches:
+            remote = matches[0]
+            logger.debug(f"remote extracted from the repo: {remote}")
+            try:
+                process = self.container.exec(["ssh-keyscan", remote])
+                stdout, stderr = process.wait_output()
+            except ExecError as e:
+                raise SyncError(f"Exited with code {e.exit_code}.", e.stderr) from e
+            self.container.remove_path(self._known_hosts_file, recursive=True)
+            self.container.push(self._known_hosts_file, stdout, make_dirs=True)
+            logger.info(f"{remote} public keys added to known_hosts")
 
     def _save_ssh_key(self):
         """Save SSH key from config to a file."""
