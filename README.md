@@ -21,6 +21,8 @@ to the following operators:
 Internally, the charm is using [`git-sync`][Git sync] to sync a remote repo with the local copy.
 The repo syncs on `update-status` or when the user manually runs the `sync-now` action.
 
+It's possible to sync a private repository by setting the `git_ssh_key` in the Juju configuration for the charm; please note that the key **will be saved in the model**, thus you should use a key with a very limited scope.
+
 ## Getting started
 
 ### Deployment
@@ -31,6 +33,8 @@ juju deploy cos-configuration-k8s \
   --config git_branch=main \
   --config git_depth=1 \
   --config prometheus_alert_rules_path=rules/prod/prometheus/
+# ... and additionally, for a private repo
+  --config git_ssh_key=@path/to/ssh/private.key
 
 juju relate cos-configuration-k8s prometheus-k8s
 ```
