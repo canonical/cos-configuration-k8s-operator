@@ -241,8 +241,22 @@ class COSConfigCharm(CharmBase):
             stdout, from the sync command.
             stderr, from the sync command.
         """
+        proxy_settings = {}
+        proxy_settings.update(
+            {
+                "https_proxy": os.environ["JUJU_CHARM_HTTPS_PROXY"]
+                if "JUJU_CHARM_HTTPS_PROXY" in os.environ
+                else "",
+                "http_proxy": os.environ["JUJU_CHARM_HTTP_PROXY"]
+                if "JUJU_CHARM_HTTP_PROXY" in os.environ
+                else "",
+                "no_proxy": os.environ["JUJU_CHARM_NO_PROXY"]
+                if "JUJU_CHARM_NO_PROXY" in os.environ
+                else "",
+            }
+        )
         try:
-            process = self.container.exec(self._git_sync_command_line())
+            process = self.container.exec(self._git_sync_command_line(), environment=proxy_settings)
         except APIError as e:
             raise SyncError(str(e)) from e
 
