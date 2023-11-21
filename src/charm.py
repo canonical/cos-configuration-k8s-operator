@@ -256,7 +256,9 @@ class COSConfigCharm(CharmBase):
             }
         )
         try:
-            process = self.container.exec(self._git_sync_command_line(), environment=proxy_settings)
+            process = self.container.exec(
+                self._git_sync_command_line(), environment=proxy_settings
+            )
         except APIError as e:
             raise SyncError(str(e)) from e
 
