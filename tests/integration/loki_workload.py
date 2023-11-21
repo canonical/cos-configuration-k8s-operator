@@ -100,7 +100,7 @@ class LokiServer:
                     # error message from the loki server can be:
                     #   - '404 page not found'
                     as_yaml = yaml.safe_load(result)
-                    return as_yaml if type(as_yaml) is dict else {}
+                    return as_yaml if isinstance(as_yaml, dict) else {}
                 except (ScannerError, ValueError):
                     return {}
 

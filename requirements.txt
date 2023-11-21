@@ -1,7 +1,7 @@
 # Copyright 2021 Canonical Ltd.
 # See LICENSE file for licensing details.
 
-ops
+ops < 2.5
 PyYAML
 lightkube
 lightkube-models
