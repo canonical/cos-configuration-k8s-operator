@@ -1,7 +1,7 @@
 # COS Configuration Repository Operator for Kubernetes
 
 [![COS configuration](https://charmhub.io/cos-configuration-k8s/badge.svg)](https://charmhub.io/cos-configuration-k8s)
-[![Test Suite](https://github.com/canonical/alertmanager-k8s-operator/actions/workflows/release-edge.yaml/badge.svg)](https://github.com/canonical/alertmanager-k8s-operator/actions/workflows/release-edge.yaml)
+[![Release](https://github.com/canonical/cos-configuration-k8s-operator/actions/workflows/release.yaml/badge.svg)](https://github.com/canonical/cos-configuration-k8s-operator/actions/workflows/release.yaml)
 ![Discourse status](https://img.shields.io/discourse/status?server=https%3A%2F%2Fdiscourse.charmhub.io&style=flat)
 
 This charmed operator for Kubernetes enables you to provide configurations to
