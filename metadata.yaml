@@ -48,6 +48,11 @@ provides:
 requires:
   loki-config:
     interface: loki_push_api
+  tracing:
+    description: |
+      Tracing endpoint for integrating with tempo.
+    limit: 1
+    interface: tracing
 
 peers:
   replicas:

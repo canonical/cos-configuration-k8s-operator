@@ -16,6 +16,8 @@ from charms.grafana_k8s.v0.grafana_dashboard import GrafanaDashboardProvider
 from charms.loki_k8s.v0.loki_push_api import LokiPushApiConsumer
 from charms.observability_libs.v0.kubernetes_service_patch import KubernetesServicePatch
 from charms.prometheus_k8s.v0.prometheus_scrape import PrometheusRulesProvider
+from charms.tempo_k8s.v1.charm_tracing import trace_charm
+from charms.tempo_k8s.v2.tracing import TracingEndpointRequirer
 from ops.charm import ActionEvent, CharmBase
 from ops.main import main
 from ops.model import ActiveStatus, BlockedStatus, MaintenanceStatus
@@ -45,6 +47,15 @@ class SyncError(Exception):
         super().__init__(self.message)
 
 
+@trace_charm(
+    tracing_endpoint="tracing_endpoint",
+    extra_types=[
+        GrafanaDashboardProvider,
+        LokiPushApiConsumer,
+        KubernetesServicePatch,
+        PrometheusRulesProvider,
+    ],
+)
 class COSConfigCharm(CharmBase):
     """A Juju charm for configuring COS."""
 
@@ -83,6 +94,7 @@ class COSConfigCharm(CharmBase):
             return
         self._git_sync_mount_point = self.model.storages["content-from-git"][0].location
         self._repo_path = os.path.join(self._git_sync_mount_point, self.SUBDIR)
+        self._tracing = TracingEndpointRequirer(self, protocols=["otlp_http"])
 
         self.container = self.unit.get_container(self._container_name)
 
@@ -467,6 +479,13 @@ class COSConfigCharm(CharmBase):
         if result is None:
             return result
         return result.group(1)
+
+    @property
+    def tracing_endpoint(self) -> Optional[str]:
+        """Otlp http endpoint for charm instrumentation."""
+        if self._tracing.is_ready():
+            return self._tracing.get_endpoint("otlp_http")
+        return None
 
 
 if __name__ == "__main__":
