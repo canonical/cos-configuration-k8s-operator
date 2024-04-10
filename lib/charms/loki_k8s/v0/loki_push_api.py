@@ -456,7 +456,7 @@ from urllib import request
 from urllib.error import HTTPError
 
 import yaml
-from charms.observability_libs.v0.juju_topology import JujuTopology
+from cosl import JujuTopology
 from ops.charm import (
     CharmBase,
     HookEvent,
@@ -480,7 +480,7 @@ LIBAPI = 0
 
 # Increment this PATCH version before using `charmcraft publish-lib` or reset
 # to 0 if you are raising the major API version
-LIBPATCH = 24
+LIBPATCH = 28
 
 logger = logging.getLogger(__name__)
 
@@ -2115,7 +2115,24 @@ class LogProxyConsumer(ConsumerBase):
                - "zipsha": sha256 sum of zip file of promtail binary
                - "binsha": sha256 sum of unpacked promtail binary
         """
-        with request.urlopen(promtail_info["url"]) as r:
+        # Check for Juju proxy variables and fall back to standard ones if not set
+        # If no Juju proxy variable was set, we set proxies to None to let the ProxyHandler get
+        # the proxy env variables from the environment
+        proxies = {
+            # The ProxyHandler uses only the protocol names as keys
+            # https://docs.python.org/3/library/urllib.request.html#urllib.request.ProxyHandler
+            "https": os.environ.get("JUJU_CHARM_HTTPS_PROXY", ""),
+            "http": os.environ.get("JUJU_CHARM_HTTP_PROXY", ""),
+            # The ProxyHandler uses `no` for the no_proxy key
+            # https://github.com/python/cpython/blob/3.12/Lib/urllib/request.py#L2553
+            "no": os.environ.get("JUJU_CHARM_NO_PROXY", ""),
+        }
+        proxies = {k: v for k, v in proxies.items() if v != ""} or None
+
+        proxy_handler = request.ProxyHandler(proxies)
+        opener = request.build_opener(proxy_handler)
+
+        with opener.open(promtail_info["url"]) as r:
             file_bytes = r.read()
             file_path = os.path.join(BINARY_DIR, promtail_info["filename"] + ".gz")
             with open(file_path, "wb") as f:
