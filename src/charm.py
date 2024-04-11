@@ -143,14 +143,18 @@ class COSConfigCharm(CharmBase):
         self.prom_rules_provider = PrometheusRulesProvider(
             self,
             self.prometheus_relation_name,
-            dir_path=os.path.join(self._repo_path, cast(str, self.config["prometheus_alert_rules_path"])),
+            dir_path=os.path.join(
+                self._repo_path, cast(str, self.config["prometheus_alert_rules_path"])
+            ),
             recursive=True,
         )
 
         self.loki_rules_provider = LokiPushApiConsumer(
             self,
             self.loki_relation_name,
-            alert_rules_path=os.path.join(self._repo_path, cast(str, self.config["loki_alert_rules_path"])),
+            alert_rules_path=os.path.join(
+                self._repo_path, cast(str, self.config["loki_alert_rules_path"])
+            ),
             recursive=True,
             skip_alert_topology_labeling=True,
         )
@@ -158,7 +162,9 @@ class COSConfigCharm(CharmBase):
         self.grafana_dashboards_provider = GrafanaDashboardProvider(
             self,
             self.grafana_relation_name,
-            dashboards_path=os.path.join(self._repo_path, cast(str, self.config["grafana_dashboards_path"])),
+            dashboards_path=os.path.join(
+                self._repo_path, cast(str, self.config["grafana_dashboards_path"])
+            ),
         )
 
         self.service_patcher = KubernetesServicePatch(
