@@ -51,7 +51,6 @@ class SyncError(Exception):
     extra_types=[
         GrafanaDashboardProvider,
         LokiPushApiConsumer,
-        KubernetesServicePatch,
         PrometheusRulesProvider,
     ],
 )
