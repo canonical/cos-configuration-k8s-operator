@@ -14,7 +14,6 @@ from typing import Final, List, Optional, Tuple, cast
 
 from charms.grafana_k8s.v0.grafana_dashboard import GrafanaDashboardProvider
 from charms.loki_k8s.v0.loki_push_api import LokiPushApiConsumer
-from charms.observability_libs.v0.kubernetes_service_patch import KubernetesServicePatch
 from charms.prometheus_k8s.v0.prometheus_scrape import PrometheusRulesProvider
 from charms.tempo_k8s.v1.charm_tracing import trace_charm
 from charms.tempo_k8s.v2.tracing import TracingEndpointRequirer
@@ -97,6 +96,7 @@ class COSConfigCharm(CharmBase):
         self._tracing = TracingEndpointRequirer(self, protocols=["otlp_http"])
 
         self.container = self.unit.get_container(self._container_name)
+        self.unit.open_port(protocol="tcp", port=self._git_sync_port)
 
         # Core lifecycle events
         self.framework.observe(self.on.config_changed, self._on_config_changed)
@@ -159,11 +159,6 @@ class COSConfigCharm(CharmBase):
             self,
             self.grafana_relation_name,
             dashboards_path=os.path.join(self._repo_path, self.config["grafana_dashboards_path"]),
-        )
-
-        self.service_patcher = KubernetesServicePatch(
-            self,
-            [(f"{self.app.name}-git-sync", self._git_sync_port, self._git_sync_port)],
         )
 
     @property
