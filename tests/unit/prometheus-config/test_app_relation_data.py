@@ -26,7 +26,6 @@ class TestAppRelationData(unittest.TestCase):
     charm should forward them over app relation data.
     """
 
-    @patch("charm.KubernetesServicePatch", lambda x, y: None)
     @patch.object(Container, "exec", new=FakeProcessVersionCheck)
     def setUp(self):
         self.harness = Harness(COSConfigCharm)

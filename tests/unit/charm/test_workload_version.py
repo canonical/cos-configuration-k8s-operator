@@ -12,7 +12,6 @@ from ops.testing import Harness
 class TestWorkloadVersion(unittest.TestCase):
     """Workload version should be set correctly in juju."""
 
-    @patch("charm.KubernetesServicePatch", lambda x, y: None)
     def setUp(self):
         patcher = patch.object(COSConfigCharm, "_git_sync_version", property(lambda *_: "1.2.3"))
         self.mock_version = patcher.start()

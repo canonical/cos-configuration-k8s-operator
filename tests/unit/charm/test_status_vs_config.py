@@ -31,7 +31,6 @@ class TestBlockedStatus(unittest.TestCase):
         self.mock_version = patcher.start()
         self.addCleanup(patcher.stop)
 
-    @patch("charm.KubernetesServicePatch", lambda x, y: None)
     @given(st.booleans(), st.integers(1, 5))
     def test_unit_is_blocked_if_no_config_provided(self, is_leader, num_units):
         """Scenario: Unit is deployed without any user-provided config."""
@@ -80,7 +79,6 @@ class TestRandomHooks(unittest.TestCase):
         self.mock_version = patcher.start()
         self.addCleanup(patcher.stop)
 
-    @patch("charm.KubernetesServicePatch", lambda x, y: None)
     @given(
         st.booleans(),
         st.integers(1, 5),
@@ -157,7 +155,6 @@ class TestRandomHooks(unittest.TestCase):
             self.harness.cleanup()
 
 
-@patch("charm.KubernetesServicePatch", lambda x, y: None)
 class TestStatusVsConfig(unittest.TestCase):
     """Feature: Charm's status should reflect the completeness of the config.
 
