@@ -95,7 +95,7 @@ class COSConfigCharm(CharmBase):
         self._tracing = TracingEndpointRequirer(self, protocols=["otlp_http"])
 
         self.container = self.unit.get_container(self._container_name)
-        self.unit.open_port(protocol="tcp", port=self._git_sync_port)
+        self.unit.open_port(self._git_sync_port)
 
         # Core lifecycle events
         self.framework.observe(self.on.config_changed, self._on_config_changed)
