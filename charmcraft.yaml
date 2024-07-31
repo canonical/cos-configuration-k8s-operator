@@ -11,5 +11,11 @@ bases:
       channel: "20.04"
 parts:
   charm:
+    charm-binary-python-packages:
+      - jsonschema
+      - cryptography
+      - pyyaml
+      - requests
+      - pydantic>=2
     build-packages:
     - git
