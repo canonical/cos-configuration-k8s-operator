@@ -8,12 +8,13 @@ import string
 import unittest
 from unittest.mock import patch
 
-import charm
 import hypothesis.strategies as st
 import ops
-from charm import COSConfigCharm
 from hypothesis import given
 from ops.testing import Harness
+
+import charm
+from charm import COSConfigCharm
 
 logger = logging.getLogger(__name__)
 
