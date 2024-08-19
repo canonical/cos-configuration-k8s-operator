@@ -9,10 +9,11 @@ from unittest.mock import patch
 
 import ops
 import yaml
-from charm import COSConfigCharm
 from helpers import FakeProcessVersionCheck
 from ops.model import ActiveStatus, Container
 from ops.testing import Harness
+
+from charm import COSConfigCharm
 
 logger = logging.getLogger(__name__)
 

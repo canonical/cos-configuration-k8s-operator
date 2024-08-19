@@ -5,8 +5,9 @@
 import unittest
 from unittest.mock import patch
 
-from charm import COSConfigCharm
 from ops.testing import Harness
+
+from charm import COSConfigCharm
 
 
 class TestWorkloadVersion(unittest.TestCase):

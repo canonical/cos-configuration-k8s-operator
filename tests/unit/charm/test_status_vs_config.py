@@ -10,11 +10,12 @@ from typing import List, Tuple
 from unittest.mock import patch
 
 import hypothesis.strategies as st
-from charm import COSConfigCharm
 from helpers import FakeProcessVersionCheck
 from hypothesis import given
 from ops.model import ActiveStatus, BlockedStatus, Container
 from ops.testing import Harness
+
+from charm import COSConfigCharm
 
 logger = logging.getLogger(__name__)
 
