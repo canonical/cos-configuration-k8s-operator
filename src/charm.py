@@ -90,15 +90,16 @@ class COSConfigCharm(CharmBase):
             # Storage isn't available yet. Since storage becomes available early enough, no need
             # to observe storage-attached and complicate things; simply abort until it is ready.
             return
+
+        self._tracing = TracingEndpointRequirer(self, protocols=["otlp_http"])
+
         try:
             self._git_sync_mount_point = self.model.storages["content-from-git"][0].location
         except ModelError:
             # Storage isn't available yet.
             return
 
-        self._git_sync_mount_point = self.model.storages["content-from-git"][0].location
         self._repo_path = os.path.join(self._git_sync_mount_point, self.SUBDIR)
-        self._tracing = TracingEndpointRequirer(self, protocols=["otlp_http"])
 
         self.container = self.unit.get_container(self._container_name)
         self.unit.set_ports(self._git_sync_port)
