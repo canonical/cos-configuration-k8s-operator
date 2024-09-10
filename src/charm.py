@@ -79,6 +79,7 @@ class COSConfigCharm(CharmBase):
 
     def __init__(self, *args):
         super().__init__(*args)
+        self._tracing = TracingEndpointRequirer(self, protocols=["otlp_http"])
         # Path to the repo in the _charm_ container, which is needed for instantiating
         # PrometheusRulesProvider with the rule files (otherwise would need to fetch via pebble
         # every time).
@@ -92,7 +93,6 @@ class COSConfigCharm(CharmBase):
             return
         self._git_sync_mount_point = self.model.storages["content-from-git"][0].location
         self._repo_path = os.path.join(self._git_sync_mount_point, self.SUBDIR)
-        self._tracing = TracingEndpointRequirer(self, protocols=["otlp_http"])
 
         self.container = self.unit.get_container(self._container_name)
         self.unit.set_ports(self._git_sync_port)
