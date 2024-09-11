@@ -96,7 +96,8 @@ class COSConfigCharm(CharmBase):
         try:
             self._git_sync_mount_point = self.model.storages["content-from-git"][0].location
         except ModelError:
-            # Storage isn't available yet.
+            # Storage isn't available yet. This may happen during the startup sequence.
+            # ops.model.ModelError: ERROR invalid value "content-from-git/1" for option -s: getting filesystem attachment info: filesystem attachment "1" on "unit cos-configuration/0" not provisioned
             return
 
         self._repo_path = os.path.join(self._git_sync_mount_point, self.SUBDIR)
