@@ -19,7 +19,7 @@ from charms.tempo_k8s.v1.charm_tracing import trace_charm
 from charms.tempo_k8s.v2.tracing import TracingEndpointRequirer
 from ops.charm import ActionEvent, CharmBase
 from ops.main import main
-from ops.model import ActiveStatus, BlockedStatus, MaintenanceStatus
+from ops.model import ActiveStatus, BlockedStatus, MaintenanceStatus, ModelError
 from ops.pebble import APIError, ChangeError, ExecError
 
 logger = logging.getLogger(__name__)
@@ -92,6 +92,15 @@ class COSConfigCharm(CharmBase):
             # to observe storage-attached and complicate things; simply abort until it is ready.
             return
         self._git_sync_mount_point = self.model.storages["content-from-git"][0].location
+        self._repo_path = os.path.join(self._git_sync_mount_point, self.SUBDIR)
+
+        try:
+            self._git_sync_mount_point = self.model.storages["content-from-git"][0].location
+        except ModelError:
+            # Storage isn't available yet. This may happen during the startup sequence.
+            # ops.model.ModelError: ERROR invalid value "content-from-git/1" for option -s: getting filesystem attachment info: filesystem attachment "1" on "unit cos-configuration/0" not provisioned
+            return
+
         self._repo_path = os.path.join(self._git_sync_mount_point, self.SUBDIR)
 
         self.container = self.unit.get_container(self._container_name)
