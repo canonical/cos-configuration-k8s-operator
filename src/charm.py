@@ -79,6 +79,7 @@ class COSConfigCharm(CharmBase):
 
     def __init__(self, *args):
         super().__init__(*args)
+        self._tracing = TracingEndpointRequirer(self, protocols=["otlp_http"])
         # Path to the repo in the _charm_ container, which is needed for instantiating
         # PrometheusRulesProvider with the rule files (otherwise would need to fetch via pebble
         # every time).
@@ -90,8 +91,8 @@ class COSConfigCharm(CharmBase):
             # Storage isn't available yet. Since storage becomes available early enough, no need
             # to observe storage-attached and complicate things; simply abort until it is ready.
             return
-
-        self._tracing = TracingEndpointRequirer(self, protocols=["otlp_http"])
+        self._git_sync_mount_point = self.model.storages["content-from-git"][0].location
+        self._repo_path = os.path.join(self._git_sync_mount_point, self.SUBDIR)
 
         try:
             self._git_sync_mount_point = self.model.storages["content-from-git"][0].location
