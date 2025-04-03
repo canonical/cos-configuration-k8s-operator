@@ -35,6 +35,4 @@ async def test_build_and_deploy(ops_test: OpsTest, charm_under_test):
 
     logger.info("upgrade deployed charm with local charm %s", charm_under_test)
     await ops_test.model.applications[app_name].refresh(path=charm_under_test, resources=resources)
-    await ops_test.model.wait_for_idle(
-        apps=[app_name], status="blocked", timeout=1000, raise_on_error=False
-    )
+    await ops_test.model.wait_for_idle(apps=[app_name], status="blocked", timeout=1000)
