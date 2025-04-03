@@ -32,6 +32,7 @@ dev = [
   "pytest-operator",
   "aiohttp",
   "prometheus_api_client",
+  "sh",
 ]
 # Testing tools configuration
 [tool.coverage.run]

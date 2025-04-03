@@ -18,7 +18,7 @@ from charm import COSConfigCharm
 
 logger = logging.getLogger(__name__)
 
-ops.testing.SIMULATE_CAN_CONNECT = True
+ops.testing.SIMULATE_CAN_CONNECT = True  # pyright: ignore
 
 
 class TestReinitializeCalledOnce(unittest.TestCase):

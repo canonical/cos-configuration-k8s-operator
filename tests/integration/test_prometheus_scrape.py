@@ -26,6 +26,7 @@ async def test_build_and_deploy(ops_test: OpsTest, charm_under_test):
 
     Assert on the unit status before any relations/configurations take place.
     """
+    assert ops_test.model
     await ops_test.model.set_config({"logging-config": "<root>=WARNING; unit=DEBUG"})
 
     # build and deploy charm from local source folder

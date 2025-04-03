@@ -24,6 +24,7 @@ async def test_build_and_deploy(ops_test: OpsTest, charm_under_test):
 
     Assert on the unit status before any relations/configurations take place.
     """
+    assert ops_test.model
     logger.info("build charm from local source folder")
 
     logger.info("deploy charm from charmhub")

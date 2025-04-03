@@ -6,8 +6,8 @@
 
 """Helper for interacting with Loki throughout the charm's lifecycle."""
 
-
 import logging
+from typing import Optional
 
 import aiohttp
 import requests
@@ -68,7 +68,7 @@ class LokiServer:
             exception is raised
         """
         try:
-            info = self._build_info()
+            info = self._build_info() or {}
             version = info.get("version", None)
             if not version:
                 raise LokiServerNotReadyError("Loki version could not be retrieved.")
@@ -79,7 +79,7 @@ class LokiServer:
 
         return version
 
-    async def rules(self, namespace: str = None) -> dict:
+    async def rules(self, namespace: Optional[str] = None) -> dict:
         """Send a GET request to get Prometheus rules.
 
         Args:
