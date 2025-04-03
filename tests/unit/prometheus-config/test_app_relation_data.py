@@ -4,8 +4,8 @@
 
 import logging
 import os
-from typing import cast
 import unittest
+from typing import cast
 from unittest.mock import patch
 
 import ops
@@ -133,7 +133,7 @@ class TestAppRelationData(unittest.TestCase):
         for rel_name in [
             COSConfigCharm.prometheus_relation_name,
             COSConfigCharm.loki_relation_name,
-            # COSConfigCharm.grafana_relation_name, # TODO push dashboard dummy
+            # COSConfigCharm.grafana_relation_name, # TODO push dashboard sample
         ]:
             rel_id = self.harness.add_relation(rel_name, f"{rel_name}-charm")
             self.harness.add_relation_unit(rel_id, f"{rel_name}-charm/0")
@@ -151,7 +151,7 @@ class TestAppRelationData(unittest.TestCase):
         for rel_name in [
             COSConfigCharm.prometheus_relation_name,
             COSConfigCharm.loki_relation_name,
-            # COSConfigCharm.grafana_relation_name, # TODO push dashboard dummy
+            # COSConfigCharm.grafana_relation_name, # TODO push dashboard sample
         ]:
             self.harness.charm.on.update_status.emit()
             relation = self.harness.charm.model.get_relation(rel_name)
