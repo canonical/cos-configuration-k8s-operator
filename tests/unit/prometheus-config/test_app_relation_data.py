@@ -5,6 +5,7 @@
 import logging
 import os
 import unittest
+from typing import cast
 from unittest.mock import patch
 
 import ops
@@ -17,7 +18,7 @@ from charm import COSConfigCharm
 
 logger = logging.getLogger(__name__)
 
-ops.testing.SIMULATE_CAN_CONNECT = True
+ops.testing.SIMULATE_CAN_CONNECT = True  # pyright: ignore
 
 
 class TestAppRelationData(unittest.TestCase):
@@ -44,14 +45,14 @@ class TestAppRelationData(unittest.TestCase):
         self.prom_alert_dir = os.path.join(
             self.harness.charm._git_sync_mount_point_sidecar,
             self.harness.charm.SUBDIR,
-            self.harness.charm.config["prometheus_alert_rules_path"],
+            cast(str, self.harness.charm.config["prometheus_alert_rules_path"]),
         )
         self.prom_alert_filepath = os.path.join(self.prom_alert_dir, "alert.rule")
 
         self.loki_alert_dir = os.path.join(
             self.harness.charm._git_sync_mount_point_sidecar,
             self.harness.charm.SUBDIR,
-            self.harness.charm.config["loki_alert_rules_path"],
+            cast(str, self.harness.charm.config["loki_alert_rules_path"]),
         )
         self.loki_alert_filepath = os.path.join(self.loki_alert_dir, "alert.rule")
 
@@ -132,7 +133,7 @@ class TestAppRelationData(unittest.TestCase):
         for rel_name in [
             COSConfigCharm.prometheus_relation_name,
             COSConfigCharm.loki_relation_name,
-            # COSConfigCharm.grafana_relation_name, # TODO push dashboard dummy
+            # COSConfigCharm.grafana_relation_name, # TODO push dashboard sample
         ]:
             rel_id = self.harness.add_relation(rel_name, f"{rel_name}-charm")
             self.harness.add_relation_unit(rel_id, f"{rel_name}-charm/0")
@@ -147,11 +148,16 @@ class TestAppRelationData(unittest.TestCase):
         container.push(self.git_hash_file_path, "gitdir: ./abcd1234", make_dirs=True)
 
         # THEN after update status app relation data gets updated
-        self.harness.charm.on.update_status.emit()
-        relation = self.harness.charm.model.get_relation(rel_name)
-        assert relation is not None
-        rel_data = relation.data[self.harness.charm.app]
-        self.assertNotEqual(rel_data["alert_rules"], "{}")
+        for rel_name in [
+            COSConfigCharm.prometheus_relation_name,
+            COSConfigCharm.loki_relation_name,
+            # COSConfigCharm.grafana_relation_name, # TODO push dashboard sample
+        ]:
+            self.harness.charm.on.update_status.emit()
+            relation = self.harness.charm.model.get_relation(rel_name)
+            assert relation is not None
+            rel_data = relation.data[self.harness.charm.app]
+            self.assertNotEqual(rel_data["alert_rules"], "{}")
 
         # AND the unit goes into active state
         self.assertIsInstance(self.harness.charm.unit.status, ActiveStatus)
