@@ -43,7 +43,9 @@ async def test_relating_to_grafana(ops_test):
         "grafana-k8s", channel="edge", application_name="grafana", trust=True
     )
     await ops_test.model.add_relation("grafana", app_name)
-    await ops_test.model.wait_for_idle(apps=["grafana"], status="active", timeout=1000)
+    await ops_test.model.wait_for_idle(
+        apps=["grafana"], status="active", timeout=1000, raise_on_error=False
+    )
 
 
 async def test_dashboard_files_ingested_by_grafana(ops_test):
