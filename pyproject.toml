@@ -65,12 +65,12 @@ convention = "google"
 extraPaths = ["src", "lib"]
 pythonVersion = "3.8"
 pythonPlatform = "All"
-addopts = "--tb=native --verbose --capture=no --log-cli-level=INFO"
 
 [tool.pytest.ini_options]
 minversion = "6.0"
 log_cli_level = "INFO"
 asyncio_mode = "auto"
+addopts = "--tb=native --verbose --capture=no --log-cli-level=INFO"
 
 [tool.codespell]
 skip = ".git,.tox,build,venv*"
