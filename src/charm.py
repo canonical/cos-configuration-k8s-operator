@@ -15,8 +15,8 @@ from typing import Final, List, Optional, Tuple, cast
 from charms.grafana_k8s.v0.grafana_dashboard import GrafanaDashboardProvider
 from charms.loki_k8s.v0.loki_push_api import LokiPushApiConsumer
 from charms.prometheus_k8s.v0.prometheus_scrape import PrometheusRulesProvider
-from charms.tempo_k8s.v1.charm_tracing import trace_charm
-from charms.tempo_k8s.v2.tracing import TracingEndpointRequirer
+from charms.tempo_coordinator_k8s.v0.charm_tracing import trace_charm
+from charms.tempo_coordinator_k8s.v0.tracing import TracingEndpointRequirer
 from ops.charm import ActionEvent, CharmBase
 from ops.main import main
 from ops.model import ActiveStatus, BlockedStatus, MaintenanceStatus, ModelError
@@ -112,7 +112,8 @@ class COSConfigCharm(CharmBase):
         self.framework.observe(self.on.leader_elected, self._on_leader_changed)
         self.framework.observe(self.on.leader_settings_changed, self._on_leader_changed)
         self.framework.observe(
-            self.on.git_sync_pebble_ready, self._on_git_sync_pebble_ready  # pyright: ignore
+            self.on.git_sync_pebble_ready,
+            self._on_git_sync_pebble_ready,  # pyright: ignore
         )
         self.framework.observe(self.on.start, self._on_start)
         self.framework.observe(self.on.update_status, self._on_update_status)
@@ -134,7 +135,8 @@ class COSConfigCharm(CharmBase):
 
         # Action events
         self.framework.observe(
-            self.on.sync_now_action, self._on_sync_now_action  # pyright: ignore
+            self.on.sync_now_action,
+            self._on_sync_now_action,  # pyright: ignore
         )
 
         # logger.info("repo location: [%s]", self.meta.storages["content-from-git"].location)

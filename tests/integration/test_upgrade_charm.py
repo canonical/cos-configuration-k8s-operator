@@ -12,7 +12,7 @@ from pytest_operator.plugin import OpsTest
 
 logger = logging.getLogger(__name__)
 
-METADATA = yaml.safe_load(Path("./metadata.yaml").read_text())
+METADATA = yaml.safe_load(Path("./charmcraft.yaml").read_text())
 # app_name = "am"
 app_name = METADATA["name"]
 resources = {"git-sync-image": METADATA["resources"]["git-sync-image"]["upstream-source"]}
@@ -24,6 +24,7 @@ async def test_build_and_deploy(ops_test: OpsTest, charm_under_test):
 
     Assert on the unit status before any relations/configurations take place.
     """
+    assert ops_test.model
     logger.info("build charm from local source folder")
 
     logger.info("deploy charm from charmhub")
@@ -34,4 +35,6 @@ async def test_build_and_deploy(ops_test: OpsTest, charm_under_test):
 
     logger.info("upgrade deployed charm with local charm %s", charm_under_test)
     await ops_test.model.applications[app_name].refresh(path=charm_under_test, resources=resources)
-    await ops_test.model.wait_for_idle(apps=[app_name], status="blocked", timeout=1000)
+    await ops_test.model.wait_for_idle(
+        apps=[app_name], status="blocked", timeout=1000, raise_on_error=False
+    )

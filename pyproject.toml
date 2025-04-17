@@ -1,6 +1,39 @@
 # Copyright 2021 Canonical Ltd.
 # See LICENSE file for licensing details.
+[project]
+name = "cos-configuration-k8s"
+version = "0.0"
+requires-python = "~=3.8"
 
+dependencies = [
+  "ops",
+  "PyYAML",
+  "lightkube",
+  "lightkube-models",
+  "opentelemetry-exporter-otlp-proto-http>=1.21.0",
+  "pydantic",
+  "requests",
+  "cosl",
+]
+
+[project.optional-dependencies]
+dev = [
+  # Linting
+  "ruff",
+  "codespell",
+  # Static
+  "pyright",
+  # Unit
+  "pytest",
+  "coverage[toml]",
+  "hypothesis",
+  # Integration
+  "juju",
+  "pytest-operator",
+  "aiohttp",
+  "prometheus_api_client",
+  "sh",
+]
 # Testing tools configuration
 [tool.coverage.run]
 branch = true
@@ -17,19 +50,19 @@ target-version = ["py38"]
 [tool.ruff]
 line-length = 99
 extend-exclude = ["__pycache__", "*.egg_info"]
-select = ["E", "W", "F", "C", "N", "R", "D", "I001"]
+lint.select = ["E", "W", "F", "C", "N", "R", "D", "I001"]
 # Ignore E501 because using black creates errors with this
 # Ignore D107 Missing docstring in __init__
-ignore = ["E501", "D107", "RET504"]
+lint.ignore = ["E501", "D107", "RET504"]
 # D100, D101, D102, D103: Ignore missing docstrings in tests
-per-file-ignores = {"tests/*" = ["D100","D101","D102","D103"]}
+lint.per-file-ignores = {"tests/*" = ["D100","D101","D102","D103"]}
 
-[tool.ruff.pydocstyle]
+[tool.ruff.lint.pydocstyle]
 convention = "google"
 
 # Static analysis tools configuration
 [tool.pyright]
-extraPaths = ["lib"]
+extraPaths = ["src", "lib"]
 pythonVersion = "3.8"
 pythonPlatform = "All"
 
@@ -37,3 +70,8 @@ pythonPlatform = "All"
 minversion = "6.0"
 log_cli_level = "INFO"
 asyncio_mode = "auto"
+addopts = "--tb=native --verbose --capture=no --log-cli-level=INFO"
+
+[tool.codespell]
+skip = ".git,.tox,build,venv*"
+ignore-words-list = "assertIn"

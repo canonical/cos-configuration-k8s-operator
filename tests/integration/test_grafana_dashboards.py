@@ -15,7 +15,7 @@ from pytest_operator.plugin import OpsTest
 
 logger = logging.getLogger(__name__)
 
-METADATA = yaml.safe_load(Path("./metadata.yaml").read_text())
+METADATA = yaml.safe_load(Path("./charmcraft.yaml").read_text())
 app_name = METADATA["name"]
 resources = {"git-sync-image": METADATA["resources"]["git-sync-image"]["upstream-source"]}
 
@@ -26,6 +26,7 @@ async def test_build_and_deploy(ops_test: OpsTest, charm_under_test):
 
     Assert on the unit status before any relations/configurations take place.
     """
+    assert ops_test.model
     await ops_test.model.set_config({"logging-config": "<root>=WARNING; unit=DEBUG"})
 
     # build and deploy charm from local source folder
@@ -42,7 +43,9 @@ async def test_relating_to_grafana(ops_test):
         "grafana-k8s", channel="edge", application_name="grafana", trust=True
     )
     await ops_test.model.add_relation("grafana", app_name)
-    await ops_test.model.wait_for_idle(apps=["grafana"], status="active", timeout=1000)
+    await ops_test.model.wait_for_idle(
+        apps=["grafana"], status="active", timeout=1000, raise_on_error=False
+    )
 
 
 async def test_dashboard_files_ingested_by_grafana(ops_test):

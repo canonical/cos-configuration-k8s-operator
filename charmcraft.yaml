@@ -1,21 +1,113 @@
 # Copyright 2021 Canonical Ltd.
 # See LICENSE file for licensing details.
-
+name: cos-configuration-k8s
 type: charm
-bases:
-  - build-on:
-    - name: "ubuntu"
-      channel: "20.04"
-    run-on:
-    - name: "ubuntu"
-      channel: "20.04"
+summary: Push user (3rd-party) rules to COS charms.
+description: |
+  Cos-configuration fetches alert rules and other settings specified in a Git repository, and
+  forwards them to downstream prometheus, loki anf grafana charms.
+
+links:
+  documentation: https://discourse.charmhub.io/t/cos-configuration-k8s-docs-index/7284
+  website: https://charmhub.io/cos-configuration-k8s
+  source: https://github.com/canonical/cos-configuration-k8s-operator
+  issues: https://github.com/canonical/cos-configuration-k8s-operator/issues
+
+assumes:
+  - k8s-api
+
+platforms:
+  ubuntu@20.04:amd64:
+
 parts:
   charm:
-    charm-binary-python-packages:
-      - jsonschema
-      - cryptography
-      - pyyaml
-      - requests
-      - pydantic>=2
-    build-packages:
-    - git
+    source: .
+    plugin: uv
+    build-packages: [git]
+    build-snaps: [astral-uv]
+    override-build: |
+      craftctl default
+      git describe --always > $CRAFT_PART_INSTALL/version
+
+containers:
+  git-sync:
+    resource: git-sync-image
+    mounts:
+      - storage: content-from-git
+        location: /git
+
+resources:
+  git-sync-image:
+    type: oci-image
+    description: OCI image for git-sync
+    upstream-source: k8s.gcr.io/git-sync/git-sync:v3.5.0
+
+storage:
+  content-from-git:
+    type: filesystem
+    description: >
+      Where to store the checked-out content from the git repo.
+    # Prometheus, loki and grafana libraries expect to find the alert rules in the charm container.
+    # If left unspecified, "content-from-git" would be mounted under
+    # "/juju/storage/content-from-git/0" in the charm container.
+
+provides:
+  prometheus-config:
+    interface: prometheus_scrape
+  grafana-dashboards:
+    interface: grafana_dashboard
+
+requires:
+  loki-config:
+    interface: loki_push_api
+  tracing:
+    description: |
+      Tracing endpoint for integrating with tempo.
+    limit: 1
+    interface: tracing
+
+peers:
+  replicas:
+    interface: cos_configuration_replica
+
+config:
+  options:
+    git_repo:
+      type: string
+      description: URL to repo to clone and sync against.
+    git_branch:
+      type: string
+      description: The git branch to check out.
+      default: master
+    git_rev:
+      type: string
+      description: The git revision (tag or hash) to check out
+      default: HEAD
+    git_depth:
+      type: int
+      description: >
+        Cloning depth, to truncate commit history to the specified number of commits.
+        Zero means no truncating.
+      default: 1
+    git_ssh_key:
+      type: string
+      description: >
+        An optional SSH private key to use when cloning the repository.
+    prometheus_alert_rules_path:
+      type: string
+      description: Relative path in repo to prometheus rules.
+      default: "prometheus_alert_rules"
+    loki_alert_rules_path:
+      type: string
+      description: Relative path in repo to loki rules.
+      default: "loki_alert_rules"
+    grafana_dashboards_path:
+      type: string
+      description: Relative path in repo to grafana dashboards.
+      default: "grafana_dashboards"
+
+actions:
+  sync-now:
+    description: |
+      Sync relation data with files from the repo. This action can be used to force an update instead of
+      waiting for the update-status hook to fire.

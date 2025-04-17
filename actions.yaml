@@ -1,7 +1,0 @@
-# Copyright 2021 Canonical Ltd.
-# See LICENSE file for licensing details.
-
-sync-now:
-  description: |
-    Sync relation data with files from the repo. This action can be used to force an update instead of
-    waiting for the update-status hook to fire.
