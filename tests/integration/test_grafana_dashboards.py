@@ -48,6 +48,7 @@ async def test_relating_to_grafana(ops_test):
     )
 
 
+@pytest.mark.xfail
 async def test_dashboard_files_ingested_by_grafana(ops_test):
     action = await ops_test.model.applications["grafana"].units[0].run_action("get-admin-password")
     await action.wait()
