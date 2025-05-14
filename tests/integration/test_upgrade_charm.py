@@ -29,7 +29,7 @@ async def test_build_and_deploy(ops_test: OpsTest, charm_under_test):
 
     logger.info("deploy charm from charmhub")
     await ops_test.model.deploy(
-        "cos-configuration-k8s", application_name=app_name, channel="1/edge"
+        "cos-configuration-k8s", application_name=app_name, channel="2/edge"
     )
     await ops_test.model.wait_for_idle(apps=[app_name], status="blocked", timeout=1000)
 
