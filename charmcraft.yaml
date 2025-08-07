@@ -48,7 +48,7 @@ storage:
     type: filesystem
     description: >
       Where to store the checked-out content from the git repo.
-    # Prometheus, loki and grafana libraries expect to find the alert rules in the charm container.
+    # Prometheus, Loki and grafana libraries expect to find the alert rules in the charm container.
     # If left unspecified, "content-from-git" would be mounted under
     # "/juju/storage/content-from-git/0" in the charm container.
 
