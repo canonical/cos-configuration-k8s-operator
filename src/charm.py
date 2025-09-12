@@ -91,8 +91,6 @@ class COSConfigCharm(CharmBase):
             # Storage isn't available yet. Since storage becomes available early enough, no need
             # to observe storage-attached and complicate things; simply abort until it is ready.
             return
-        self._git_sync_mount_point = self.model.storages["content-from-git"][0].location
-        self._repo_path = os.path.join(self._git_sync_mount_point, self.SUBDIR)
 
         try:
             self._git_sync_mount_point = self.model.storages["content-from-git"][0].location
