@@ -66,6 +66,11 @@ requires:
       Tracing endpoint for integrating with tempo.
     limit: 1
     interface: tracing
+  send-remote-write:
+    interface: prometheus_remote_write
+    optional: true
+    description: |
+      Send alert rules via Prometheus remote write.
 
 peers:
   replicas:

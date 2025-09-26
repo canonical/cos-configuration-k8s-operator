@@ -130,7 +130,7 @@ class TestReinitializeCalledOnce(unittest.TestCase):
             self.harness.charm.on.update_status.emit()
 
             # THEN reinitialization takes place only once
-            self.assertEqual(self.prom_mock.call_count, 1)
+            self.assertEqual(self.prom_mock.call_count, 2)
             self.assertEqual(self.loki_mock.call_count, 1)
             self.assertEqual(self.graf_mock.call_count, 1)
 
@@ -186,7 +186,7 @@ class TestReinitializeCalledOnce(unittest.TestCase):
             self.harness.charm.on.update_status.emit()
 
             # THEN reinitialization occurred only once more since repo was unset
-            self.assertEqual(self.prom_mock.call_count, 1)
+            self.assertEqual(self.prom_mock.call_count, 2)
             self.assertEqual(self.loki_mock.call_count, 1)
             self.assertEqual(self.graf_mock.call_count, 1)
 

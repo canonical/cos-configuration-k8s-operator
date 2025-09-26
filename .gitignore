@@ -7,3 +7,5 @@ __pycache__/
 *.py[cod]
 .tox/
 .hypothesis/
+
+.charm_tracing_buffer.raw

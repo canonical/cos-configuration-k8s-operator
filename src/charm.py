@@ -70,6 +70,7 @@ class COSConfigCharm(CharmBase):
     SUBDIR: Final = "repo"
 
     prometheus_relation_name = "prometheus-config"
+    prometheus_rw_relation_name = "send-remote-write"
     loki_relation_name = "loki-config"
     grafana_relation_name = "grafana-dashboards"
 
@@ -152,6 +153,12 @@ class COSConfigCharm(CharmBase):
         self.prom_rules_provider = PrometheusRulesProvider(
             self,
             self.prometheus_relation_name,
+            dir_path=os.path.join(self._repo_path, prometheus_alert_rules_path),
+            recursive=True,
+        )
+        self.remote_write_rules_provider = PrometheusRulesProvider(
+            self,
+            self.prometheus_rw_relation_name,
             dir_path=os.path.join(self._repo_path, prometheus_alert_rules_path),
             recursive=True,
         )
@@ -400,6 +407,7 @@ class COSConfigCharm(CharmBase):
                 type(current_hash),
             )
             self.prom_rules_provider._reinitialize_alert_rules()
+            self.remote_write_rules_provider._reinitialize_alert_rules()
             self.loki_rules_provider._reinitialize_alert_rules()
             self.grafana_dashboards_provider._reinitialize_dashboard_data(inject_dropdowns=False)
             self._stored_set("reinit_without_topology_dropdowns", "Done")
