@@ -42,7 +42,7 @@ async def test_relating_to_prometheus(ops_test):
     await ops_test.model.deploy(
         "prometheus-k8s", channel="2/edge", application_name="prom", trust=True
     )
-    await ops_test.model.add_relation("prom", app_name)
+    await ops_test.model.add_relation("prom:receive-remote-write", app_name)
     await ops_test.model.wait_for_idle(apps=["prom"], status="active", timeout=1000)
 
 

@@ -82,7 +82,7 @@ async def test_dashboard_files_ingested_by_grafana(ops_test):
     await ops_test.model.set_config({"update-status-hook-interval": "60m"})
 
     # now wait for cos-config too to become active
-    await ops_test.model.wait_for_idle(status="active", timeout=1000)
+    await ops_test.model.wait_for_idle(apps=[app_name], status="active", timeout=1000)
 
     # now, make sure dashboards are present
     all_dashboards = await client.dashboards_all()

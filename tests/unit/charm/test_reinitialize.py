@@ -85,7 +85,7 @@ class TestReinitializeCalledOnce(unittest.TestCase):
         finally:
             self.harness.cleanup()
 
-    @patch("charm.COSConfigCharm._exec_sync_repo", lambda *a, **kw: "", "")
+    @patch("charm.COSConfigCharm._exec_sync_repo", lambda *a, **kw: ("", ""))
     @given(st.integers(1, 5))
     def test_leader_reinitialize_once_with_config_and_update_status_fires(self, num_units):
         """Scenario: Leader unit is deployed with config and then update-status fires."""
@@ -137,7 +137,7 @@ class TestReinitializeCalledOnce(unittest.TestCase):
         finally:
             self.harness.cleanup()
 
-    @patch("charm.COSConfigCharm._exec_sync_repo", lambda *a, **kw: "", "")
+    @patch("charm.COSConfigCharm._exec_sync_repo", lambda *a, **kw: ("", ""))
     @given(st.integers(1, 5))
     def test_leader_reinitialize_once_when_repo_unset(self, num_units):
         """Scenario: Leader unit is deployed with config and then repo is unset."""
@@ -219,7 +219,7 @@ class TestConfigChanged(unittest.TestCase):
         self.loki_mock = patcher.start()
         self.addCleanup(patcher.stop)
 
-    @patch("charm.COSConfigCharm._exec_sync_repo", lambda *a, **kw: "", "")
+    @patch("charm.COSConfigCharm._exec_sync_repo", lambda *a, **kw: ("", ""))
     @given(
         st.tuples(
             st.sampled_from(["git_repo", "git_branch", "git_rev"]),
