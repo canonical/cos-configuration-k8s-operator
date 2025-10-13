@@ -48,7 +48,7 @@ async def test_relating_to_grafana(ops_test):
     )
 
 
-@pytest.mark.xfail
+#@pytest.mark.xfail
 async def test_dashboard_files_ingested_by_grafana(ops_test):
     action = await ops_test.model.applications["grafana"].units[0].run_action("get-admin-password")
     await action.wait()
@@ -67,7 +67,7 @@ async def test_dashboard_files_ingested_by_grafana(ops_test):
     await ops_test.model.applications[app_name].set_config(
         {
             "git_repo": "https://github.com/canonical/cos-configuration-k8s-operator.git",
-            "git_branch": "main",
+            "git_branch": "fix/grafana-dashboards",
             "grafana_dashboards_path": "tests/samples/grafana_dashboards",
         }
     )
@@ -82,7 +82,7 @@ async def test_dashboard_files_ingested_by_grafana(ops_test):
     await ops_test.model.set_config({"update-status-hook-interval": "60m"})
 
     # now wait for cos-config too to become active
-    await ops_test.model.wait_for_idle(status="active", timeout=1000)
+    await ops_test.model.wait_for_idle(apps=[app_name], status="active", timeout=1000)
 
     # now, make sure dashboards are present
     all_dashboards = await client.dashboards_all()
