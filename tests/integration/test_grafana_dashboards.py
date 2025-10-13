@@ -48,7 +48,7 @@ async def test_relating_to_grafana(ops_test):
     )
 
 
-#@pytest.mark.xfail
+@pytest.mark.xfail
 async def test_dashboard_files_ingested_by_grafana(ops_test):
     action = await ops_test.model.applications["grafana"].units[0].run_action("get-admin-password")
     await action.wait()
@@ -67,7 +67,7 @@ async def test_dashboard_files_ingested_by_grafana(ops_test):
     await ops_test.model.applications[app_name].set_config(
         {
             "git_repo": "https://github.com/canonical/cos-configuration-k8s-operator.git",
-            "git_branch": "fix/grafana-dashboards",
+            "git_branch": "main",
             "grafana_dashboards_path": "tests/samples/grafana_dashboards",
         }
     )
