@@ -67,7 +67,7 @@ class TestAppRelationData(unittest.TestCase):
             }
         )
 
-    @patch("charm.COSConfigCharm._exec_sync_repo", lambda *a, **kw: "", "")
+    @patch("charm.COSConfigCharm._exec_sync_repo", lambda *a, **kw: ("", ""))
     def test_files_appear_on_disk_after_the_last_hook_fired(self):
         """Scenario: Alert rules show up on disk only after config_changed etc. fired."""
         # GIVEN the current unit is the leader
@@ -98,7 +98,7 @@ class TestAppRelationData(unittest.TestCase):
         rel_data = relation.data[self.harness.charm.app]
         self.assertNotEqual(rel_data["alert_rules"], "{}")
 
-    @patch("charm.COSConfigCharm._exec_sync_repo", lambda *a, **kw: "", "")
+    @patch("charm.COSConfigCharm._exec_sync_repo", lambda *a, **kw: ("", ""))
     def test_unit_is_active_if_repo_url_provided_hash_present_and_relation_joins(self):
         """Scenario: Files are on disk and the charm is blocked, but now a relation joins."""
         # GIVEN the current unit is the leader
@@ -123,7 +123,7 @@ class TestAppRelationData(unittest.TestCase):
         # THEN the unit goes into active state
         self.assertIsInstance(self.harness.charm.unit.status, ActiveStatus)
 
-    @patch("charm.COSConfigCharm._exec_sync_repo", lambda *a, **kw: "", "")
+    @patch("charm.COSConfigCharm._exec_sync_repo", lambda *a, **kw: ("", ""))
     def test_unit_is_active_if_relation_joins_first_and_then_charm_config(self):
         """Scenario: A relation joins first, and only then the repo url is set."""
         # GIVEN the current unit is the leader

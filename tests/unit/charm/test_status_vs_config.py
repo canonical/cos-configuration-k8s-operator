@@ -182,7 +182,7 @@ class TestStatusVsConfig(unittest.TestCase):
         self.peer_rel_id = self.harness.add_relation("replicas", self.harness.model.app.name)
         self.harness.add_storage("content-from-git", attach=True)
 
-    @patch("charm.COSConfigCharm._exec_sync_repo", lambda *a, **kw: "", "")
+    @patch("charm.COSConfigCharm._exec_sync_repo", lambda *a, **kw: ("", ""))
     @given(st.booleans(), st.integers(1, 5))
     def test_unit_is_blocked_if_repo_url_provided_but_hash_missing(self, is_leader, num_units):
         """Scenario: Unit is deployed, the repo url config is set after, but hash file missing."""
@@ -206,7 +206,7 @@ class TestStatusVsConfig(unittest.TestCase):
         # THEN the unit goes into blocked state
         self.assertIsInstance(self.harness.charm.unit.status, BlockedStatus)
 
-    @patch("charm.COSConfigCharm._exec_sync_repo", lambda *a, **kw: "", "")
+    @patch("charm.COSConfigCharm._exec_sync_repo", lambda *a, **kw: ("", ""))
     def test_unit_is_active_if_repo_url_provided_and_hash_present(self):
         """Scenario: Unit is deployed, the repo url config is set after, and hash file present."""
         self.prep()
