@@ -11,6 +11,7 @@ import re
 import shutil
 from pathlib import Path
 from typing import Final, List, Optional, Tuple, cast
+from urllib.parse import urlparse
 
 from charms.grafana_k8s.v0.grafana_dashboard import GrafanaDashboardProvider
 from charms.loki_k8s.v0.loki_push_api import LokiPushApiConsumer
@@ -19,7 +20,13 @@ from charms.tempo_coordinator_k8s.v0.charm_tracing import trace_charm
 from charms.tempo_coordinator_k8s.v0.tracing import TracingEndpointRequirer
 from ops.charm import ActionEvent, CharmBase
 from ops.main import main
-from ops.model import ActiveStatus, BlockedStatus, MaintenanceStatus, ModelError
+from ops.model import (
+    ActiveStatus,
+    BlockedStatus,
+    MaintenanceStatus,
+    ModelError,
+    SecretNotFoundError,
+)
 from ops.pebble import APIError, ChangeError, ExecError
 
 logger = logging.getLogger(__name__)
@@ -68,6 +75,7 @@ class COSConfigCharm(CharmBase):
     # overwrite any existing files.
     # Since this is an implementation detail, it is captured here as a class variable.
     SUBDIR: Final = "repo"
+    GIT_SSH_KEY_SECRET_LABEL: Final = "private-ssh-key"
 
     prometheus_relation_name = "prometheus-config"
     prometheus_rw_relation_name = "send-remote-write"
@@ -346,6 +354,27 @@ class COSConfigCharm(CharmBase):
         """Event handler for the upgrade event during which we will update the service."""
         self._common_exit_hook()
 
+    def _get_secret_git_ssh_key(self, git_ssh_key_cfg: str) -> Optional[str]:
+        """Attempt to retrieve the secret."""
+        if not (secret_id := urlparse(git_ssh_key_cfg).netloc):
+            BlockedStatus(
+                f"the secret ({git_ssh_key_cfg}) does not follow the correct format: secret://<ID>"
+            )
+            return None
+        try:
+            secret = self.model.get_secret(id=secret_id)
+            secret_content = secret.get_content(refresh=True)
+            return secret_content.get(self.GIT_SSH_KEY_SECRET_LABEL, None)
+        except SecretNotFoundError:
+            self.unit.status = BlockedStatus(
+                f"git SSH key secret or {self.GIT_SSH_KEY_SECRET_LABEL} label not found in secret."
+            )
+        except ModelError:
+            self.unit.status = BlockedStatus(
+                "the charm does not have permission to access the git SSH key secret. Run 'juju grant-secret' to resolve."
+            )
+        return None
+
     def _get_current_hash(self) -> str:
         """Get the hash of the current revision from git-sync's filesystem.
 
@@ -469,8 +498,26 @@ class COSConfigCharm(CharmBase):
             logger.info(f"{remote} public keys added to known_hosts")
 
     def _save_ssh_key(self):
-        """Save SSH key from config to a file."""
-        ssh_key = cast(str, self.config.get("git_ssh_key", ""))
+        """Save SSH key from config.
+
+        The schema determines how the SSH key is stored in the backend. Supported schemas are:
+            1. secret://d5oi8u7mp25c7ekusut0
+            2. plain-text SSH key
+        """
+        key_cfg = cast(str, self.config.get("git_ssh_key", ""))
+        if secret_ssh_key := self._get_secret_git_ssh_key(key_cfg):
+            ssh_key = secret_ssh_key
+        else:
+            logger.warning(
+                "a plain-text private SSH key was set in Juju config, use a Juju secret instead."
+            )
+            p = r"-----BEGIN [A-Z ]*PRIVATE KEY-----"
+            if not re.search(p, key_cfg):
+                logger.warning("the private SSH key does not have the correct format.")
+                return
+
+            ssh_key = key_cfg
+
         # Key file must be readable by the user but not accessible by others.
         # Ref: https://linux.die.net/man/1/ssh
         self.container.push(

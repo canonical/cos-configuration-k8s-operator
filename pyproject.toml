@@ -27,6 +27,7 @@ dev = [
   "pytest",
   "coverage[toml]",
   "hypothesis",
+  "ops[testing]",
   # Integration
   "juju",
   "pytest-operator",

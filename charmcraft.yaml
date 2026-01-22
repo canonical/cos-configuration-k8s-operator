@@ -99,6 +99,17 @@ config:
       type: string
       description: >
         An optional SSH private key to use when cloning the repository.
+
+        This can either be a private SSH key or the secret ID which contains the private SSH key:
+          - -----BEGIN PRIVATE KEY-----/nYOUR_KEY/n-----END PRIVATE KEY-----
+          - secret://d5oi8u7mp25c7ekusut0
+
+        Using a secret is recommended so the private key is not exposed in the Juju config. The
+        secret must:
+          - exist in the same model as the cos-configuration charm
+          - have a key named "private-ssh-key" with the value of the private SSH key
+
+        Make sure to "grant-secret" to the cos-configuration charm.
     prometheus_alert_rules_path:
       type: string
       description: Relative path in repo to prometheus rules.
