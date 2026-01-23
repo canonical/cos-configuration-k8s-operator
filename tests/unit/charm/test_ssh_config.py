@@ -2,7 +2,7 @@ import logging
 from pathlib import Path, PosixPath
 
 import pytest
-from ops.testing import Container, Context, Exec, Model, PeerRelation, Secret, State, Storage
+from ops.testing import Container, Context, Exec, Model, Secret, State, Storage
 
 from src.charm import COSConfigCharm
 
