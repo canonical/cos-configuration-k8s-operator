@@ -46,14 +46,12 @@ def test_private_key_written_to_disk(
     ctx, git_sync_container, private_key_plain_text, private_key_secret
 ):
     container_name = "git-sync"
-    peers = PeerRelation("replicas")
     git_repo = {"git_repo": "http://does.not.really.matter/repo.git"}
 
-    # GIVEN git_ssh_key is not set
+    # GIVEN git_ssh_key and git_ssh_key_secret are not set
     state = State(
         leader=True,
         containers=[git_sync_container],
-        relations=[peers],
         config=git_repo,  # pyright: ignore[reportArgumentType]
         storages=[Storage("content-from-git")],
     )
@@ -81,7 +79,7 @@ def test_private_key_written_to_disk(
         charm = mgr.charm
         state_out = mgr.run()
 
-    # THEN no key exists on disk
+    # THEN the key exists on disk
     container_fs = state_out.get_container(container_name).get_filesystem(ctx)
     assert private_key_plain_text == get_ssh_key(container_fs, Path(charm._ssh_key_file_name))
 
@@ -89,7 +87,7 @@ def test_private_key_written_to_disk(
     state = State(
         leader=True,
         containers=[git_sync_container],
-        config=git_repo | {"git_ssh_key": f"secret://{private_key_secret.id}"},  # pyright: ignore[reportArgumentType]
+        config=git_repo | {"git_ssh_key_secret": f"secret://{private_key_secret.id}"},  # pyright: ignore[reportArgumentType]
         secrets=[private_key_secret],
         storages=[Storage("content-from-git")],
     )
@@ -99,18 +97,36 @@ def test_private_key_written_to_disk(
         charm = mgr.charm
         state_out = mgr.run()
 
-    # THEN no key exists on disk
+    # THEN the key exists on disk
     container_fs = state_out.get_container(container_name).get_filesystem(ctx)
     assert private_key_plain_text == get_ssh_key(container_fs, Path(charm._ssh_key_file_name))
 
 
-def test_git_ssh_key_config(ctx, git_sync_container, private_key_plain_text, private_key_secret):
-    container_name = "git-sync"
-    peers = PeerRelation("replicas")
+def test_private_key_warns_user(ctx, git_sync_container, private_key_plain_text):
     git_repo = {"git_repo": "http://does.not.really.matter/repo.git"}
 
+    # GIVEN git_ssh_key is set to a plain-text SSH key
+    state = State(
+        leader=True,
+        containers=[git_sync_container],
+        config=git_repo | {"git_ssh_key": private_key_plain_text},  # pyright: ignore[reportArgumentType]
+        storages=[Storage("content-from-git")],
+    )
+
+    # WHEN the config changes
+    with ctx(ctx.on.config_changed(), state) as mgr:
+        state_out = mgr.run()
+
+    # THEN the the user is warned of their mistake
+    assert 'WARNING: "git_ssh_key" exposes your private key' in state_out.app_status.message
+
+
+def test_unset_git_ssh_key_config_wipes_key(ctx, git_sync_container, private_key_plain_text, private_key_secret):
+    container_name = "git-sync"
+    git_repo = {"git_repo": "http://does.not.really.matter/repo.git"}
+
+    # TODO: Turn this in a paramatrize test to see the input, expected side-by-side
     incorrect_cfgs = [
-        "",
         "foo",
         private_key_secret.id,
         f"secret:{private_key_secret.id}",
@@ -122,8 +138,7 @@ def test_git_ssh_key_config(ctx, git_sync_container, private_key_plain_text, pri
             leader=True,
             model=Model("some-model"),
             containers=[git_sync_container],
-            relations=[peers],
-            config=git_repo | {"git_ssh_key": cfg},  # pyright: ignore[reportArgumentType]
+            config=git_repo | {"git_ssh_key_secret": cfg},  # pyright: ignore[reportArgumentType]
             storages=[Storage("content-from-git")],
         )
 
@@ -132,14 +147,6 @@ def test_git_ssh_key_config(ctx, git_sync_container, private_key_plain_text, pri
             charm = mgr.charm
             state_out = mgr.run()
 
-        # THEN no key exists on disk
+        # THEN an empty key exists on disk
         container_fs = state_out.get_container(container_name).get_filesystem(ctx)
-        with pytest.raises(FileNotFoundError):
-            get_ssh_key(container_fs, Path(charm._ssh_key_file_name))
-
-
-def test_git_ssh_key_without_secret_warns():
-    # GIVEN a user supplies a plain-text private SSH key via Juju config
-    # WHEN the config changes
-    # THEN the user is warned to use a secret instead
-    pass
+        assert "" == get_ssh_key(container_fs, Path(charm._ssh_key_file_name))

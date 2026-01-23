@@ -358,7 +358,7 @@ class COSConfigCharm(CharmBase):
         """Attempt to retrieve the secret."""
         if not (secret_id := urlparse(git_ssh_key_cfg).netloc):
             BlockedStatus(
-                f"the secret ({git_ssh_key_cfg}) does not follow the correct format: secret://<ID>"
+                f'the secret ({git_ssh_key_cfg}) does not follow the correct format: "secret://<ID>"'
             )
             return None
         try:
@@ -472,7 +472,7 @@ class COSConfigCharm(CharmBase):
     def _on_config_changed(self, _):
         """Event handler for ConfigChangedEvent."""
         if self.container.can_connect():
-            if self.config.get("git_ssh_key"):
+            if self.config.get("git_ssh_key") or self.config.get("git_ssh_key_secret"):
                 self._trust_ssh_remote()
                 self._save_ssh_key()
         self._common_exit_hook()
@@ -500,23 +500,25 @@ class COSConfigCharm(CharmBase):
     def _save_ssh_key(self):
         """Save SSH key from config.
 
-        The schema determines how the SSH key is stored in the backend. Supported schemas are:
-            1. secret://d5oi8u7mp25c7ekusut0
-            2. plain-text SSH key
+        The SSH key is stored on disk and comes from 2 possible config options:
+            1. git_ssh_key_secret (recommended)
+            2. git_ssh_key
         """
-        key_cfg = cast(str, self.config.get("git_ssh_key", ""))
-        if secret_ssh_key := self._get_secret_git_ssh_key(key_cfg):
+        key = cast(str, self.config.get("git_ssh_key", ""))
+        key_secret = cast(str, self.config.get("git_ssh_key_secret", ""))
+
+        if key:
+            self.unit.status = ActiveStatus(
+                'WARNING: "git_ssh_key" exposes your private key, use "git_ssh_key_secret" instead'
+            )
+            logger.warning(
+                '"git_ssh_key" exposes your private key, use "git_ssh_key_secret" instead'
+            )
+
+        if secret_ssh_key := self._get_secret_git_ssh_key(key_secret):
             ssh_key = secret_ssh_key
         else:
-            logger.warning(
-                "a plain-text private SSH key was set in Juju config, use a Juju secret instead."
-            )
-            p = r"-----BEGIN [A-Z ]*PRIVATE KEY-----"
-            if not re.search(p, key_cfg):
-                logger.warning("the private SSH key does not have the correct format.")
-                return
-
-            ssh_key = key_cfg
+            ssh_key = key
 
         # Key file must be readable by the user but not accessible by others.
         # Ref: https://linux.die.net/man/1/ssh
