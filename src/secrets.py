@@ -55,7 +55,9 @@ class SecretGetter:
         try:
             secret = self._model.get_secret(id=secret_id)
             content = secret.get_content(refresh=True)
-            value = content.get(secret_key)
+            if not (value := content.get(secret_key)):
+                self._status = BlockedStatus(secret_not_found_msg)
+                return None
             return value
         except SecretNotFoundError:
             self._status = BlockedStatus(secret_not_found_msg)
