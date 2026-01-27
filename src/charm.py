@@ -11,7 +11,6 @@ import re
 import shutil
 from pathlib import Path
 from typing import Final, List, Optional, Tuple, cast
-from urllib.parse import urlparse
 
 from charms.grafana_k8s.v0.grafana_dashboard import GrafanaDashboardProvider
 from charms.loki_k8s.v0.loki_push_api import LokiPushApiConsumer
@@ -25,9 +24,10 @@ from ops.model import (
     BlockedStatus,
     MaintenanceStatus,
     ModelError,
-    SecretNotFoundError,
 )
 from ops.pebble import APIError, ChangeError, ExecError
+
+from src.secrets import SecretGetter
 
 logger = logging.getLogger(__name__)
 
@@ -75,7 +75,6 @@ class COSConfigCharm(CharmBase):
     # overwrite any existing files.
     # Since this is an implementation detail, it is captured here as a class variable.
     SUBDIR: Final = "repo"
-    GIT_SSH_KEY_SECRET_LABEL: Final = "private-ssh-key"
 
     prometheus_relation_name = "prometheus-config"
     prometheus_rw_relation_name = "send-remote-write"
@@ -210,6 +209,22 @@ class COSConfigCharm(CharmBase):
             self._update_hash_and_rel_data()
             return
 
+        ssh_status = None
+        secrets = SecretGetter(self.model, self.config)
+        secret_url = cast(str, self.config.get("git_ssh_key_secret", ""))
+        if (ssh_secret_value := secrets.get_value(secret_url)) is not None:
+            self._save_ssh_key(ssh_secret_value)
+        else:
+            if ssh_key := cast(str, self.config.get("git_ssh_key", "")):
+                msg = '"git_ssh_key" exposes your private key, use "git_ssh_key_secret" instead'
+                ssh_status = ActiveStatus(f"WARNING: {msg}")
+                logger.warning(msg)
+                self._save_ssh_key(ssh_key)
+            else:
+                # wipe the key on disk, since neither config is set
+                ssh_status = secrets.status()
+                self._save_ssh_key("")
+
         try:
             self._exec_sync_repo()
         except SyncError as e:
@@ -225,7 +240,7 @@ class COSConfigCharm(CharmBase):
         if self._stored_get("hash") in [self._hash_placeholder, None]:
             self.unit.status = BlockedStatus("No hash file yet - confirm config is valid")
         else:
-            self.unit.status = ActiveStatus()
+            self.unit.status = ssh_status if ssh_status else ActiveStatus()
 
     def _on_sync_now_action(self, event: ActionEvent):
         """Hook for the sync-now action."""
@@ -338,7 +353,7 @@ class COSConfigCharm(CharmBase):
             ]
         )
 
-        if self.config.get("git_ssh_key"):
+        if self.config.get("git_ssh_key") or self.config.get("git_ssh_key_secret"):
             cmd.extend(["--ssh"])
             cmd.extend(["--ssh-key-file", self._ssh_key_file_name])
 
@@ -353,27 +368,6 @@ class COSConfigCharm(CharmBase):
     def _on_upgrade_charm(self, _):
         """Event handler for the upgrade event during which we will update the service."""
         self._common_exit_hook()
-
-    def _get_secret_git_ssh_key(self, git_ssh_key_cfg: str) -> Optional[str]:
-        """Attempt to retrieve the secret."""
-        if not (secret_id := urlparse(git_ssh_key_cfg).netloc):
-            BlockedStatus(
-                f'the secret ({git_ssh_key_cfg}) does not follow the correct format: "secret://<ID>"'
-            )
-            return None
-        try:
-            secret = self.model.get_secret(id=secret_id)
-            secret_content = secret.get_content(refresh=True)
-            return secret_content.get(self.GIT_SSH_KEY_SECRET_LABEL, None)
-        except SecretNotFoundError:
-            self.unit.status = BlockedStatus(
-                f"git SSH key secret or {self.GIT_SSH_KEY_SECRET_LABEL} label not found in secret."
-            )
-        except ModelError:
-            self.unit.status = BlockedStatus(
-                "the charm does not have permission to access the git SSH key secret. Run 'juju grant-secret' to resolve."
-            )
-        return None
 
     def _get_current_hash(self) -> str:
         """Get the hash of the current revision from git-sync's filesystem.
@@ -474,12 +468,12 @@ class COSConfigCharm(CharmBase):
         if self.container.can_connect():
             if self.config.get("git_ssh_key") or self.config.get("git_ssh_key_secret"):
                 self._trust_ssh_remote()
-                self._save_ssh_key()
         self._common_exit_hook()
 
     def _trust_ssh_remote(self):
         """Cleanup known_hosts and add the remote public SSH key."""
-        repo = cast(str, self.config.get("git_repo"))
+        if not (repo := cast(str, self.config.get("git_repo"))):
+            return
         # Parse remotes in different forms, specifically:
         # - git@<remote>:<user>/...
         # - git+ssh://<user>@<remote>/...
@@ -497,29 +491,8 @@ class COSConfigCharm(CharmBase):
             self.container.push(self._known_hosts_file, stdout, make_dirs=True)
             logger.info(f"{remote} public keys added to known_hosts")
 
-    def _save_ssh_key(self):
-        """Save SSH key from config.
-
-        The SSH key is stored on disk and comes from 2 possible config options:
-            1. git_ssh_key_secret (recommended)
-            2. git_ssh_key
-        """
-        key = cast(str, self.config.get("git_ssh_key", ""))
-        key_secret = cast(str, self.config.get("git_ssh_key_secret", ""))
-
-        if key:
-            self.unit.status = ActiveStatus(
-                'WARNING: "git_ssh_key" exposes your private key, use "git_ssh_key_secret" instead'
-            )
-            logger.warning(
-                '"git_ssh_key" exposes your private key, use "git_ssh_key_secret" instead'
-            )
-
-        if secret_ssh_key := self._get_secret_git_ssh_key(key_secret):
-            ssh_key = secret_ssh_key
-        else:
-            ssh_key = key
-
+    def _save_ssh_key(self, ssh_key: str):
+        """Save SSH key to a file."""
         # Key file must be readable by the user but not accessible by others.
         # Ref: https://linux.die.net/man/1/ssh
         self.container.push(
