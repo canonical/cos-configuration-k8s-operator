@@ -27,7 +27,7 @@ from ops.model import (
 )
 from ops.pebble import APIError, ChangeError, ExecError
 
-from src.secrets import SecretGetter
+from secret_store import SecretGetter
 
 logger = logging.getLogger(__name__)
 
@@ -213,17 +213,24 @@ class COSConfigCharm(CharmBase):
         secrets = SecretGetter(self.model, self.config)
         secret_url = cast(str, self.config.get("git_ssh_key_secret", ""))
         if (ssh_secret_value := secrets.get_value(secret_url)) is not None:
+            logger.warning("+++SECRET")
             self._save_ssh_key(ssh_secret_value)
         else:
             if ssh_key := cast(str, self.config.get("git_ssh_key", "")):
+                logger.warning("+++PLAIN")
                 msg = '"git_ssh_key" exposes your private key, use "git_ssh_key_secret" instead'
                 ssh_status = ActiveStatus(f"WARNING: {msg}")
                 logger.warning(msg)
                 self._save_ssh_key(ssh_key)
             else:
+                logger.warning("+++WIPE")
                 # wipe the key on disk, since neither config is set
                 ssh_status = secrets.status()
                 self._save_ssh_key("")
+
+        if ssh_status and ssh_status.name != "active":
+            self.unit.status = ssh_status
+            return
 
         try:
             self._exec_sync_repo()
@@ -240,7 +247,7 @@ class COSConfigCharm(CharmBase):
         if self._stored_get("hash") in [self._hash_placeholder, None]:
             self.unit.status = BlockedStatus("No hash file yet - confirm config is valid")
         else:
-            self.unit.status = ssh_status if ssh_status else ActiveStatus()
+            self.unit.status = ActiveStatus()
 
     def _on_sync_now_action(self, event: ActionEvent):
         """Hook for the sync-now action."""
@@ -358,7 +365,7 @@ class COSConfigCharm(CharmBase):
             cmd.extend(["--ssh-key-file", self._ssh_key_file_name])
 
         cmd.append("--one-time")
-
+        logger.warning(f"+++GIT SYNC CMD: {cmd}")
         return cmd
 
     def _on_relation_joined(self, _):
