@@ -29,12 +29,10 @@ It's possible to sync a private repository by setting the `git_ssh_key` in the J
 
 ```shell
 juju deploy cos-configuration-k8s \
-  --config git_repo=https://path.to/repo \
+  --config git_repo=git@path.to/repo.git \
   --config git_branch=main \
   --config git_depth=1 \
   --config prometheus_alert_rules_path=rules/prod/prometheus/
-# ... and additionally, for a private repo
-  --config git_ssh_key=@path/to/ssh/private.key
 
 juju relate cos-configuration-k8s prometheus-k8s
 ```
@@ -53,7 +51,7 @@ juju relate cos-configuration-k8s grafana-k8s
 
 After setting the `git_repo` (and optionally `git_branch`), the contents should be present in the workload container,
 
-```
+```shell
 $ juju ssh --container git-sync cos-configuration-k8s/0 ls -l /git
 total 4
 drwxr-xr-x 6 root root 4096 Oct 24 08:59 7f0b1eac9317850aee320b4f47a7f1527aaff625
@@ -62,7 +60,7 @@ lrwxrwxrwx 1 root root   40 Oct 24 08:59 repo -> 7f0b1eac9317850aee320b4f47a7f15
 
 and accessible from the charm container
 
-```
+```shell
 $ juju ssh cos-configuration-k8s/0 ls -l /var/lib/juju/storage/content-from-git/0
 total 4
 drwxr-xr-x 6 root root 4096 Oct 24 08:59 7f0b1eac9317850aee320b4f47a7f1527aaff625
@@ -71,25 +69,43 @@ lrwxrwxrwx 1 root root   40 Oct 24 08:59 repo -> 7f0b1eac9317850aee320b4f47a7f15
 
 After relating to e.g. prometheus, rules from the synced repo should appear in app data,
 
-```
+```shell
 juju show-unit promethus-k8s/0 --format json | jq '."prometheus-k8s/0"."relation-info"' 
 ```
 
 as well as in prometheus itself
 
-```
+```shell
 juju ssh prometheus-k8s/0 curl localhost:9090/api/v1/rules
 ```
 
+### SSH authentication for a private repo
+
+For GitHub repos, add your private key to the repo's Deploy Keys
+(`github.com/org/repo/settings/keys`). The key must **not be password protected**.
+
+```shell
+juju add-secret private-ssh-key key="$(cat ~/.ssh/cos-config)"
+juju grant-secret private-ssh-key cos-configuration-k8s
+juju secrets
+# copy the secret id (e.g. d5sgb6fmp25c7ekusuv0, without the "secret:" prefix)
+juju config cos-configuration-k8s git_ssh_key_secret="secret://d5sgb6fmp25c7ekusuv0/key"
+```
+
+Note: the `git_ssh_key` config option is not recommended for SSH authentication since it exposes
+your private key in plain-text.
+
 ### Scale Out Usage
+
 N/A
 
 ## Relations
+
 Currently, supported relations are:
+
 - `prometheus-config`, for interfacing with [prometheus][Prometheus operator].
 - `loki-config`, for interfacing with [loki][Loki operator].
 - `grafana-dashboards`, for interfacing with [grafana][Grafana operator].
-
 
 ### About Juju Topology
 
@@ -107,12 +123,13 @@ Finally, addition of Juju topology labels may unpredictably interfere with `grou
 
 On the other hand, the juju administrator may add annotations (or labels) to alert rules, recording rules and dashboards using different nomenclature that describes how it got into the model (like: `origin`, `giturl`, `branch`, `synctime`).
 
-
 ## OCI Images
+
 This charm can be used with the following image:
 - `k8s.gcr.io/git-sync/git-sync:v3.5.0`
 
 ### Resource revisions
+
 Workload images are archived on charmhub by revision number.
 
 | Resource       | Revision | Image                               |

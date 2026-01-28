@@ -54,7 +54,6 @@ class SecretGetter:
         secret_key = paths[0]
         try:
             secret = self._model.get_secret(id=secret_id)
-            logger.warning(f"+++FOUND SECRET{secret}")
             content = secret.get_content(refresh=True)
             if not (value := content.get(secret_key)):
                 self._status = BlockedStatus(secret_not_found_msg)
