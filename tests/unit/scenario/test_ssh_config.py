@@ -6,6 +6,7 @@ import dataclasses
 import logging
 from pathlib import Path, PosixPath
 
+import pytest
 from ops.testing import Model
 
 logger = logging.getLogger(__name__)
@@ -89,36 +90,39 @@ def test_ssh_key_secret_config(
         assert switch in charm._git_sync_command_line()
 
 
-def test_incorrect_ssh_key_secret_config(ctx, base_state, git_repo, private_key_secret):
-    # GIVEN git_ssh_key_secret is not set to secret://<secret-id>/<key>
-    # TODO: if easy, move this to parametrize and look at the other PR for ref where I did this
-    incorrect_cfgs = [
+@pytest.mark.parametrize(
+    "cfg",
+    [
         "foo",
-        private_key_secret.id,
-        f"secret:{private_key_secret.id}",
-        f"secret://{private_key_secret.id}",
-        f"secret://{private_key_secret.id}/incorrect-key",
-        f"secret://some-model/{private_key_secret.id}/private-ssh-key",
-    ]
-    for cfg in incorrect_cfgs:
-        # GIVEN an invalid git_ssh_key_secret config
-        in_state = dataclasses.replace(
-            base_state,
-            config=git_repo | {"git_ssh_key_secret": cfg},
-            model=Model("some-model"),
-            secrets=[private_key_secret],
-        )
+        pytest.param("{private_key_secret.id}", id="secret_id_only"),
+        pytest.param("secret:{private_key_secret.id}", id="wrong_scheme"),
+        pytest.param("secret://{private_key_secret.id}", id="missing_key"),
+        pytest.param("secret://{private_key_secret.id}/incorrect-key", id="incorrect_key"),
+        pytest.param(
+            "secret://some-model/{private_key_secret.id}/private-ssh-key", id="with_model_name"
+        ),
+    ],
+)
+def test_incorrect_ssh_key_secret_config(ctx, base_state, git_repo, private_key_secret, cfg):
+    # GIVEN git_ssh_key_secret is not set to secret://<secret-id>/<key>
+    # GIVEN an invalid git_ssh_key_secret config
+    in_state = dataclasses.replace(
+        base_state,
+        config=git_repo | {"git_ssh_key_secret": cfg},
+        model=Model("some-model"),
+        secrets=[private_key_secret],
+    )
 
-        # WHEN the config changes
-        with ctx(ctx.on.config_changed(), in_state) as mgr:
-            charm = mgr.charm
-            state_out = mgr.run()
+    # WHEN the config changes
+    with ctx(ctx.on.config_changed(), in_state) as mgr:
+        charm = mgr.charm
+        state_out = mgr.run()
 
-        # THEN the key is wiped on disk
-        container_fs = state_out.get_container(container_name).get_filesystem(ctx)
-        assert "" == get_ssh_key(container_fs, Path(charm._ssh_key_file_name))
-        # THEN the the user is warned of their mistake
-        assert "secret not found" in state_out.unit_status.message
+    # THEN the key is wiped on disk
+    container_fs = state_out.get_container(container_name).get_filesystem(ctx)
+    assert "" == get_ssh_key(container_fs, Path(charm._ssh_key_file_name))
+    # THEN the the user is warned of their mistake
+    assert "secret not found" in state_out.unit_status.message
 
 
 def test_both_ssh_configs_set(
