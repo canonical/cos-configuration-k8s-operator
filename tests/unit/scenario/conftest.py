@@ -47,7 +47,7 @@ def ctx(git_hash_file_mock):
 
 
 @pytest.fixture(autouse=True)
-def private_key_plain_text():
+def private_key_cleartext():
     yield """-----BEGIN OPENSSH PRIVATE KEY-----
 foo
 -----END OPENSSH PRIVATE KEY-----
@@ -55,10 +55,10 @@ foo
 
 
 @pytest.fixture(autouse=True)
-def private_key_secret(private_key_plain_text):
+def private_key_secret(private_key_cleartext):
     yield Secret(
         id="d5oi8u7mp25c7ekusut0",
-        tracked_content={"private-ssh-key": private_key_plain_text},
+        tracked_content={"private-ssh-key": private_key_cleartext},
     )
 
 

@@ -40,11 +40,11 @@ def test_ssh_key_config(
     ctx,
     base_state,
     git_repo,
-    private_key_plain_text,
+    private_key_cleartext,
 ):
-    # GIVEN git_ssh_key_secret is set to a plain-text SSH key
+    # GIVEN git_ssh_key_secret is set to a cleartext SSH key
     in_state = dataclasses.replace(
-        base_state, config=git_repo | {"git_ssh_key": private_key_plain_text}
+        base_state, config=git_repo | {"git_ssh_key": private_key_cleartext}
     )
 
     # WHEN the config changes
@@ -55,7 +55,7 @@ def test_ssh_key_config(
     # THEN the key exists on disk
     # AND the key has an additional newline added
     container_fs = state_out.get_container(container_name).get_filesystem(ctx)
-    assert f"{private_key_plain_text}\n" == get_ssh_key(
+    assert private_key_cleartext == get_ssh_key(
         container_fs, Path(charm._ssh_key_file_name)
     )
     for switch in ssh_switches:
@@ -66,7 +66,7 @@ def test_ssh_key_secret_config(
     ctx,
     base_state,
     git_repo,
-    private_key_plain_text,
+    private_key_cleartext,
     private_key_secret,
 ):
     # GIVEN git_ssh_key_secret is set to a secret containing the SSH key
@@ -85,7 +85,7 @@ def test_ssh_key_secret_config(
     # THEN the key exists on disk
     # AND the key has an additional newline added
     container_fs = state_out.get_container(container_name).get_filesystem(ctx)
-    assert f"{private_key_plain_text}\n" == get_ssh_key(container_fs, Path(charm._ssh_key_file_name))
+    assert private_key_cleartext == get_ssh_key(container_fs, Path(charm._ssh_key_file_name))
     for switch in ssh_switches:
         assert switch in charm._git_sync_command_line()
 
@@ -129,14 +129,14 @@ def test_both_ssh_configs_set(
     ctx,
     base_state,
     git_repo,
-    private_key_plain_text,
+    private_key_cleartext,
     private_key_secret,
 ):
     # GIVEN both git_ssh_key and git_ssh_key_secret are set
     in_state = dataclasses.replace(
         base_state,
         config=git_repo
-        | {"git_ssh_key": private_key_plain_text}
+        | {"git_ssh_key": private_key_cleartext}
         | {"git_ssh_key_secret": f"secret://{private_key_secret.id}/private-ssh-key"},
         secrets=[private_key_secret],
     )
@@ -149,15 +149,15 @@ def test_both_ssh_configs_set(
     # THEN the private key from the secret is preferred and exists on disk
     # AND the key has an additional newline added
     container_fs = state_out.get_container(container_name).get_filesystem(ctx)
-    assert f"{private_key_plain_text}\n" == get_ssh_key(container_fs, Path(charm._ssh_key_file_name))
+    assert private_key_cleartext == get_ssh_key(container_fs, Path(charm._ssh_key_file_name))
     for switch in ssh_switches:
         assert switch in charm._git_sync_command_line()
 
 
-def test_private_key_warns_user(ctx, base_state, git_repo, private_key_plain_text):
-    # GIVEN git_ssh_key is set to a plain-text SSH key
+def test_private_key_warns_user(ctx, base_state, git_repo, private_key_cleartext):
+    # GIVEN git_ssh_key is set to a cleartext SSH key
     in_state = dataclasses.replace(
-        base_state, config=git_repo | {"git_ssh_key": private_key_plain_text}
+        base_state, config=git_repo | {"git_ssh_key": private_key_cleartext}
     )
 
     # WHEN the config changes
@@ -165,4 +165,4 @@ def test_private_key_warns_user(ctx, base_state, git_repo, private_key_plain_tex
         state_out = mgr.run()
 
     # THEN the the user is warned of their mistake
-    assert 'WARNING: "git_ssh_key" exposes your private key' in state_out.unit_status.message
+    assert 'WARN: cleartext ssh key' in state_out.unit_status.message

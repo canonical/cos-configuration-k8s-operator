@@ -210,15 +210,17 @@ class COSConfigCharm(CharmBase):
             return
 
         ssh_status = None
-        secrets = SecretGetter(self.model, self.config)
+        secrets = SecretGetter(self.model)
         secret_url = cast(str, self.config.get("git_ssh_key_secret", ""))
         if (ssh_secret_value := secrets.get_value(secret_url)) is not None:
             self._save_ssh_key(ssh_secret_value)
         else:
             if ssh_key := cast(str, self.config.get("git_ssh_key", "")):
-                msg = '"git_ssh_key" exposes your private key, use "git_ssh_key_secret" instead'
-                ssh_status = ActiveStatus(f"WARNING: {msg}")
-                logger.warning(msg)
+                ssh_status = ActiveStatus("WARN: cleartext ssh key, see debug-log")
+                logger.warning(
+                    '"git_ssh_key" exposes your private key as cleartext in Juju config, and will '
+                    'be deprecated in 26.04; use "git_ssh_key_secret" instead.'
+                )
                 self._save_ssh_key(ssh_key)
             else:
                 # wipe the key on disk, since neither config is set
@@ -496,10 +498,10 @@ class COSConfigCharm(CharmBase):
 
     def _save_ssh_key(self, ssh_key: str):
         """Save SSH key to a file."""
+        if ssh_key:
+            ssh_key = ssh_key.rstrip() + "\n"
         # Key file must be readable by the user but not accessible by others.
         # Ref: https://linux.die.net/man/1/ssh
-        if ssh_key:
-            ssh_key += "\n"
         self.container.push(
             Path(self._ssh_key_file_name), ssh_key, permissions=0o600, make_dirs=True
         )

@@ -100,7 +100,7 @@ config:
       description: >
         An optional SSH private key to use when cloning the repository.
 
-        WARNING: This will expose your private key as plain-text in the Juju config. Use the
+        WARNING: This will expose your private key as cleartext in the Juju config. Use the
                  "git_ssh_key_secret" config option instead.
     git_ssh_key_secret:
       type: string

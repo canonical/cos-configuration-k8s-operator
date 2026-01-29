@@ -93,7 +93,7 @@ juju config cos-configuration-k8s git_ssh_key_secret="secret://d5sgb6fmp25c7ekus
 ```
 
 Note: the `git_ssh_key` config option is not recommended for SSH authentication since it exposes
-your private key in plain-text.
+your private key in cleartext.
 
 ### Scale Out Usage
 

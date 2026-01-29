@@ -9,8 +9,8 @@ from typing import Optional
 from urllib.parse import urlparse
 
 from ops.model import (
+    ActiveStatus,
     BlockedStatus,
-    ConfigData,
     Model,
     ModelError,
     SecretNotFoundError,
@@ -23,9 +23,8 @@ logger = logging.getLogger(__name__)
 class SecretGetter:
     """A getter for Juju secrets and statuses related to secret operations."""
 
-    def __init__(self, model: Model, config: ConfigData):
+    def __init__(self, model: Model):
         self._model = model
-        self._config = config
         self._status: Optional[StatusBase] = None
 
     def get_value(self, secret_url: str) -> Optional[str]:
@@ -58,13 +57,17 @@ class SecretGetter:
             if not (value := content.get(secret_key)):
                 self._status = BlockedStatus(secret_not_found_msg)
                 return None
+            self._status = ActiveStatus()
             return value
         except SecretNotFoundError:
             self._status = BlockedStatus(secret_not_found_msg)
             return None
-        except ModelError:
+        except ModelError as e:
+            logger.error(
+                f"missing charm permissions for the git SSH key secret. run 'juju grant-secret' to resolve: {e}"
+            )
             self._status = BlockedStatus(
-                "missing charm permissions for the git SSH key secret. 'juju grant-secret' may resolve."
+                "missing charm permissions for the secret, see debug-log."
             )
             return None
         except Exception as e:
