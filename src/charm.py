@@ -19,8 +19,15 @@ from charms.tempo_coordinator_k8s.v0.charm_tracing import trace_charm
 from charms.tempo_coordinator_k8s.v0.tracing import TracingEndpointRequirer
 from ops.charm import ActionEvent, CharmBase
 from ops.main import main
-from ops.model import ActiveStatus, BlockedStatus, MaintenanceStatus, ModelError
+from ops.model import (
+    ActiveStatus,
+    BlockedStatus,
+    MaintenanceStatus,
+    ModelError,
+)
 from ops.pebble import APIError, ChangeError, ExecError
+
+from secrets_helper import SecretGetter
 
 logger = logging.getLogger(__name__)
 
@@ -202,6 +209,28 @@ class COSConfigCharm(CharmBase):
             self._update_hash_and_rel_data()
             return
 
+        ssh_status = None
+        secrets = SecretGetter(self.model)
+        secret_url = cast(str, self.config.get("git_ssh_key_secret", ""))
+        if (ssh_secret_value := secrets.get_value(secret_url)) is not None:
+            self._save_ssh_key(ssh_secret_value)
+        else:
+            if ssh_key := cast(str, self.config.get("git_ssh_key", "")):
+                ssh_status = ActiveStatus("WARN: cleartext ssh key, see debug-log")
+                logger.warning(
+                    '"git_ssh_key" exposes your private key as cleartext in Juju config, and will '
+                    'be deprecated in 26.04; use "git_ssh_key_secret" instead.'
+                )
+                self._save_ssh_key(ssh_key)
+            else:
+                # wipe the key on disk, since neither config is set
+                ssh_status = secrets.status()
+                self._save_ssh_key("")
+
+        if ssh_status and ssh_status.name != "active":
+            self.unit.status = ssh_status
+            return
+
         try:
             self._exec_sync_repo()
         except SyncError as e:
@@ -217,7 +246,7 @@ class COSConfigCharm(CharmBase):
         if self._stored_get("hash") in [self._hash_placeholder, None]:
             self.unit.status = BlockedStatus("No hash file yet - confirm config is valid")
         else:
-            self.unit.status = ActiveStatus()
+            self.unit.status = ActiveStatus(ssh_status.message if ssh_status else "")
 
     def _on_sync_now_action(self, event: ActionEvent):
         """Hook for the sync-now action."""
@@ -330,12 +359,11 @@ class COSConfigCharm(CharmBase):
             ]
         )
 
-        if self.config.get("git_ssh_key"):
+        if self.config.get("git_ssh_key") or self.config.get("git_ssh_key_secret"):
             cmd.extend(["--ssh"])
             cmd.extend(["--ssh-key-file", self._ssh_key_file_name])
 
         cmd.append("--one-time")
-
         return cmd
 
     def _on_relation_joined(self, _):
@@ -443,14 +471,14 @@ class COSConfigCharm(CharmBase):
     def _on_config_changed(self, _):
         """Event handler for ConfigChangedEvent."""
         if self.container.can_connect():
-            if self.config.get("git_ssh_key"):
+            if self.config.get("git_ssh_key") or self.config.get("git_ssh_key_secret"):
                 self._trust_ssh_remote()
-                self._save_ssh_key()
         self._common_exit_hook()
 
     def _trust_ssh_remote(self):
         """Cleanup known_hosts and add the remote public SSH key."""
-        repo = cast(str, self.config.get("git_repo"))
+        if not (repo := cast(str, self.config.get("git_repo"))):
+            return
         # Parse remotes in different forms, specifically:
         # - git@<remote>:<user>/...
         # - git+ssh://<user>@<remote>/...
@@ -468,9 +496,10 @@ class COSConfigCharm(CharmBase):
             self.container.push(self._known_hosts_file, stdout, make_dirs=True)
             logger.info(f"{remote} public keys added to known_hosts")
 
-    def _save_ssh_key(self):
-        """Save SSH key from config to a file."""
-        ssh_key = cast(str, self.config.get("git_ssh_key", ""))
+    def _save_ssh_key(self, ssh_key: str):
+        """Save SSH key to a file."""
+        if ssh_key:
+            ssh_key = ssh_key.rstrip() + "\n"
         # Key file must be readable by the user but not accessible by others.
         # Ref: https://linux.die.net/man/1/ssh
         self.container.push(
