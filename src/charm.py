@@ -11,6 +11,7 @@ import re
 import shutil
 from pathlib import Path
 from typing import Final, List, Optional, Tuple, cast
+from urllib.parse import urlparse
 
 from charms.grafana_k8s.v0.grafana_dashboard import GrafanaDashboardProvider
 from charms.loki_k8s.v0.loki_push_api import LokiPushApiConsumer
@@ -82,6 +83,7 @@ class COSConfigCharm(CharmBase):
     grafana_relation_name = "grafana-dashboards"
 
     _hash_placeholder = "failed to fetch hash"
+    _ssh_config_file = "/root/.ssh/config"
     _ssh_key_file_name = "/run/cos-config-ssh-key.priv"
     _known_hosts_file = "/etc/git-secret/known_hosts"
 
@@ -473,6 +475,7 @@ class COSConfigCharm(CharmBase):
         if self.container.can_connect():
             if self.config.get("git_ssh_key") or self.config.get("git_ssh_key_secret"):
                 self._trust_ssh_remote()
+                self._push_ssh_config()
         self._common_exit_hook()
 
     def _trust_ssh_remote(self):
@@ -496,6 +499,41 @@ class COSConfigCharm(CharmBase):
             self.container.push(self._known_hosts_file, stdout, make_dirs=True)
             logger.info(f"{remote} public keys added to known_hosts")
 
+    def _push_ssh_config(self):
+        """Push the SSH config necessary for cloning using SSH, using proxy if set."""
+        proxy_env = os.environ.get("JUJU_CHARM_HTTPS_PROXY") or os.environ.get("JUJU_CHARM_HTTP_PROXY")
+        proxy_host = None
+        proxy_port = None
+        
+        if proxy_env:
+            # The proxy should be set with the scheme if not using DNS
+            logger.info("Here")
+            if proxy_env.startswith(("http://", "https://")):
+                parsed = urlparse(proxy_env)
+                proxy_host = parsed.hostname
+                proxy_port = parsed.port
+            else:
+                if ":" in proxy_env:
+                    proxy_host, port_str = proxy_env.split(":", 1)
+                    try:
+                        proxy_port = int(port_str)
+                    except ValueError:
+                        raise ValueError(f"Invalid proxy port: {port_str}")
+                else:
+                    # Default Squid port 3128 if no port provided
+                    proxy_host = proxy_env
+                    proxy_port = 3128
+
+        if proxy_host and proxy_port:
+            # TODO: consider replacing socat with corkscrew
+            proxy_command = f'socat - "PROXY:{proxy_host}:%h:%p,proxyport={proxy_port}"'
+            ssh_config_content = f"""
+            ProxyCommand {proxy_command}
+            """
+            self.container.push(
+                Path(self._ssh_config_file), ssh_config_content, permissions=0o600, make_dirs=True
+            )
+    
     def _save_ssh_key(self, ssh_key: str):
         """Save SSH key to a file."""
         if ssh_key:
