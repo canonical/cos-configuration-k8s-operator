@@ -504,7 +504,7 @@ class COSConfigCharm(CharmBase):
         proxy_env = os.environ.get("JUJU_CHARM_HTTPS_PROXY") or os.environ.get("JUJU_CHARM_HTTP_PROXY")
         proxy_host = None
         proxy_port = None
-        
+
         if proxy_env:
             # The proxy should be set with the scheme if not using DNS
             logger.info("Here")
@@ -533,7 +533,7 @@ class COSConfigCharm(CharmBase):
             self.container.push(
                 Path(self._ssh_config_file), ssh_config_content, permissions=0o600, make_dirs=True
             )
-    
+
     def _save_ssh_key(self, ssh_key: str):
         """Save SSH key to a file."""
         if ssh_key:
