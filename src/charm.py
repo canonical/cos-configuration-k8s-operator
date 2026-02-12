@@ -507,7 +507,6 @@ class COSConfigCharm(CharmBase):
 
         if proxy_env:
             # The proxy should be set with the scheme if not using DNS
-            logger.info("Here")
             if proxy_env.startswith(("http://", "https://")):
                 parsed = urlparse(proxy_env)
                 proxy_host = parsed.hostname
@@ -524,8 +523,7 @@ class COSConfigCharm(CharmBase):
                     proxy_host = proxy_env
                     proxy_port = 3128
 
-        if proxy_host and proxy_port:
-            # TODO: consider replacing socat with corkscrew
+        if proxy_host:
             proxy_command = f'socat - "PROXY:{proxy_host}:%h:%p,proxyport={proxy_port}"'
             ssh_config_content = f"""
             ProxyCommand {proxy_command}
@@ -533,6 +531,7 @@ class COSConfigCharm(CharmBase):
             self.container.push(
                 Path(self._ssh_config_file), ssh_config_content, permissions=0o600, make_dirs=True
             )
+            logger.info("SSH config file updated.")
 
     def _save_ssh_key(self, ssh_key: str):
         """Save SSH key to a file."""
