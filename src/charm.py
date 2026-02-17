@@ -12,12 +12,12 @@ import shutil
 from pathlib import Path
 from typing import Final, List, Optional, Tuple, cast
 
+from charmlibs.interfaces.sloth import SlothProvider
 from charms.grafana_k8s.v0.grafana_dashboard import GrafanaDashboardProvider
 from charms.loki_k8s.v0.loki_push_api import LokiPushApiConsumer
 from charms.prometheus_k8s.v0.prometheus_scrape import PrometheusRulesProvider
 from charms.tempo_coordinator_k8s.v0.charm_tracing import trace_charm
 from charms.tempo_coordinator_k8s.v0.tracing import TracingEndpointRequirer
-from charmlibs.interfaces.sloth import SlothProvider
 from ops.charm import ActionEvent, CharmBase
 from ops.main import main
 from ops.model import (
@@ -82,6 +82,20 @@ class SlothSloProvider:
         # because cos-configuration doesn't inject topology (see README about Juju Topology)
         self._provider = SlothProvider(charm, relation_name, inject_topology=False)
 
+    def _collect_slo_file_paths(self) -> List[str]:
+        """Collect paths to all SLO YAML files in the directory.
+
+        Returns:
+            List of file paths to YAML files, or empty list if none found.
+        """
+        slo_files = []
+        for root, _, files in os.walk(self._slos_dir):
+            for file in files:
+                if file.endswith((".yaml", ".yml")):
+                    file_path = os.path.join(root, file)
+                    slo_files.append(file_path)
+        return slo_files
+
     def _read_slo_files(self) -> str:
         """Read all SLO YAML files from the slos directory.
 
@@ -97,13 +111,7 @@ class SlothSloProvider:
             logger.warning("SLO path is not a directory: %s", self._slos_dir)
             return ""
 
-        slo_files = []
-        for root, _, files in os.walk(self._slos_dir):
-            for file in files:
-                if file.endswith((".yaml", ".yml")):
-                    file_path = os.path.join(root, file)
-                    slo_files.append(file_path)
-
+        slo_files = self._collect_slo_file_paths()
         if not slo_files:
             logger.debug("No SLO files found in %s", self._slos_dir)
             return ""
