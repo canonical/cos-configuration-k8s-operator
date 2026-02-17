@@ -9,3 +9,7 @@ __pycache__/
 .hypothesis/
 
 .charm_tracing_buffer.raw
+
+# Python package artifacts
+*.egg-info/
+*.whl
