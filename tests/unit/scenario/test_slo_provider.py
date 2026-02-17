@@ -7,45 +7,11 @@
 import dataclasses
 import logging
 
-import pytest
 from scenario import Relation
 
 from src.sloth import SlothSloProvider
 
 logger = logging.getLogger(__name__)
-
-
-@pytest.fixture
-def slo_files(tmp_path):
-    """Create sample SLO files for testing."""
-    slo_dir = tmp_path / "slos"
-    slo_dir.mkdir(parents=True)
-
-    # Create first SLO file
-    (slo_dir / "api-slo.yaml").write_text("""version: prometheus/v1
-service: api-service
-slos:
-  - name: requests-availability
-    objective: 99.9
-    sli:
-      events:
-        error_query: 'sum(rate(http_requests_total{status=~"5.."}[{{.window}}]))'
-        total_query: 'sum(rate(http_requests_total[{{.window}}]))'
-""")
-
-    # Create second SLO file
-    (slo_dir / "db-slo.yaml").write_text("""version: prometheus/v1
-service: db-service
-slos:
-  - name: query-availability
-    objective: 99.95
-    sli:
-      events:
-        error_query: 'sum(rate(db_queries_total{status="error"}[{{.window}}]))'
-        total_query: 'sum(rate(db_queries_total[{{.window}}]))'
-""")
-
-    yield slo_dir
 
 
 def test_sloth_relation_joined_with_charm(
@@ -74,20 +40,20 @@ def test_sloth_relation_joined_with_charm(
     assert any(r.endpoint == "sloth" for r in state_out.relations)
 
 
-def test_slo_files_read_correctly(slo_files, base_state):
+def test_slo_files_read_correctly(base_state):
     """Test that SLO files are read and combined correctly."""
     from unittest.mock import MagicMock
 
     # GIVEN an SLO provider pointing to test files
     mock_charm = MagicMock()
-    provider = SlothSloProvider(mock_charm, "sloth", str(slo_files))
+    provider = SlothSloProvider(mock_charm, "sloth", "tests/samples/slos")
 
     # WHEN reading SLO files
     result = provider._read_slo_files()
 
     # THEN both files are read and combined with separator
     assert "api-service" in result
-    assert "db-service" in result
+    assert "database-service" in result
     assert "---" in result
     assert result.count("---") == 1  # One separator for two files
 
@@ -147,4 +113,3 @@ def test_slo_provider_filters_yaml_files(tmp_path, base_state):
     assert "test" in result or "test2" in result
     assert "should not be read" not in result
     assert "README" not in result
-
