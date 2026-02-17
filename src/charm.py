@@ -211,6 +211,15 @@ class COSConfigCharm(CharmBase):
             self._update_hash_and_rel_data()
             return
 
+        # TODO: add logic from _on_config_changed here
+        if self.config.get("git_ssh_key") or self.config.get("git_ssh_key_secret"):
+            self._trust_ssh_remote()
+            if not self._push_ssh_config():
+                self.unit.status = BlockedStatus(
+                "Invalid proxy configuration - use see debug-log"
+            )
+                return
+
         ssh_status = None
         secrets = SecretGetter(self.model)
         secret_url = cast(str, self.config.get("git_ssh_key_secret", ""))
@@ -472,10 +481,6 @@ class COSConfigCharm(CharmBase):
 
     def _on_config_changed(self, _):
         """Event handler for ConfigChangedEvent."""
-        if self.container.can_connect():
-            if self.config.get("git_ssh_key") or self.config.get("git_ssh_key_secret"):
-                self._trust_ssh_remote()
-                self._push_ssh_config()
         self._common_exit_hook()
 
     def _trust_ssh_remote(self):
@@ -499,39 +504,51 @@ class COSConfigCharm(CharmBase):
             self.container.push(self._known_hosts_file, stdout, make_dirs=True)
             logger.info(f"{remote} public keys added to known_hosts")
 
-    def _push_ssh_config(self):
+    def _push_ssh_config(self) -> bool:
         """Push the SSH config necessary for cloning using SSH, using proxy if set."""
-        proxy_env = os.environ.get("JUJU_CHARM_HTTPS_PROXY") or os.environ.get("JUJU_CHARM_HTTP_PROXY")
-        proxy_host = None
-        proxy_port = None
+        proxy_env = (
+            os.environ.get("JUJU_CHARM_HTTPS_PROXY")
+            or os.environ.get("JUJU_CHARM_HTTP_PROXY")
+        )
 
-        if proxy_env:
-            # The proxy should be set with the scheme if not using DNS
-            if proxy_env.startswith(("http://", "https://")):
-                parsed = urlparse(proxy_env)
-                proxy_host = parsed.hostname
-                proxy_port = parsed.port
-            else:
-                if ":" in proxy_env:
-                    proxy_host, port_str = proxy_env.split(":", 1)
-                    try:
-                        proxy_port = int(port_str)
-                    except ValueError:
-                        raise ValueError(f"Invalid proxy port: {port_str}")
-                else:
-                    # Default Squid port 3128 if no port provided
-                    proxy_host = proxy_env
-                    proxy_port = 3128
+        if not proxy_env:
+            # If the an SSH file was written to the container before, remove it now.
+            # This is because when no proxy is set, we should not use an SSH
+            # config file written before which specifies a proxy.
+            if self.container.exists(self._ssh_config_file):
+                self.container.remove_path(self._ssh_config_file)
+            return True
 
-        if proxy_host:
-            proxy_command = f'socat - "PROXY:{proxy_host}:%h:%p,proxyport={proxy_port}"'
-            ssh_config_content = f"""
-            ProxyCommand {proxy_command}
-            """
-            self.container.push(
-                Path(self._ssh_config_file), ssh_config_content, permissions=0o600, make_dirs=True
-            )
-            logger.info("SSH config file updated.")
+        # Ensure scheme exists so urlparse behaves consistently
+        if "://" not in proxy_env:
+            proxy_env = f"http://{proxy_env}"
+
+        parsed = urlparse(proxy_env)
+
+        proxy_host = parsed.hostname
+        if not proxy_host:
+            logger.info("Invalid proxy hostname in model config: {proxy_host}")
+            return False
+
+        try:
+            proxy_port = parsed.port or 3128
+        except ValueError:
+
+            logger.info("Invalid proxy port in model config: {proxy_port}")
+            return False
+
+        proxy_command = f'socat - "PROXY:{proxy_host}:%h:%p,proxyport={proxy_port}"'
+        ssh_config_content = f"ProxyCommand {proxy_command}\n"
+
+        self.container.push(
+            Path(self._ssh_config_file),
+            ssh_config_content,
+            permissions=0o600,
+            make_dirs=True,
+        )
+
+        logger.info("SSH config file updated.")
+        return True
 
     def _save_ssh_key(self, ssh_key: str):
         """Save SSH key to a file."""
