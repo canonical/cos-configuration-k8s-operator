@@ -65,6 +65,7 @@ convention = "google"
 # Static analysis tools configuration
 [tool.pyright]
 extraPaths = ["src", "lib"]
+exclude = ["tests"]
 pythonVersion = "3.8"
 pythonPlatform = "All"
 
