@@ -11,6 +11,7 @@ import re
 import shutil
 from pathlib import Path
 from typing import Final, List, Optional, Tuple, cast
+from urllib.parse import urlparse
 
 from charms.grafana_k8s.v0.grafana_dashboard import GrafanaDashboardProvider
 from charms.loki_k8s.v0.loki_push_api import LokiPushApiConsumer
@@ -82,6 +83,7 @@ class COSConfigCharm(CharmBase):
     grafana_relation_name = "grafana-dashboards"
 
     _hash_placeholder = "failed to fetch hash"
+    _ssh_config_file = "/root/.ssh/config"
     _ssh_key_file_name = "/run/cos-config-ssh-key.priv"
     _known_hosts_file = "/etc/git-secret/known_hosts"
 
@@ -208,6 +210,14 @@ class COSConfigCharm(CharmBase):
             self._remove_repo_folder()
             self._update_hash_and_rel_data()
             return
+
+        if self.config.get("git_ssh_key") or self.config.get("git_ssh_key_secret"):
+            self._trust_ssh_remote()
+            if not self._push_ssh_config():
+                self.unit.status = BlockedStatus(
+                "Invalid proxy configuration - use see debug-log"
+            )
+                return
 
         ssh_status = None
         secrets = SecretGetter(self.model)
@@ -470,9 +480,6 @@ class COSConfigCharm(CharmBase):
 
     def _on_config_changed(self, _):
         """Event handler for ConfigChangedEvent."""
-        if self.container.can_connect():
-            if self.config.get("git_ssh_key") or self.config.get("git_ssh_key_secret"):
-                self._trust_ssh_remote()
         self._common_exit_hook()
 
     def _trust_ssh_remote(self):
@@ -495,6 +502,52 @@ class COSConfigCharm(CharmBase):
             self.container.remove_path(self._known_hosts_file, recursive=True)
             self.container.push(self._known_hosts_file, stdout, make_dirs=True)
             logger.info(f"{remote} public keys added to known_hosts")
+
+    def _push_ssh_config(self) -> bool:
+        """Push the SSH config necessary for cloning using SSH, using proxy if set."""
+        proxy_env = (
+            os.environ.get("JUJU_CHARM_HTTPS_PROXY")
+            or os.environ.get("JUJU_CHARM_HTTP_PROXY")
+        )
+
+        if not proxy_env:
+            # If the an SSH file was written to the container before, remove it now.
+            # This is because when no proxy is set, we should not use an SSH
+            # config file written before which specifies a proxy.
+            if self.container.exists(self._ssh_config_file):
+                self.container.remove_path(self._ssh_config_file)
+            return True
+
+        # Ensure scheme exists so urlparse behaves consistently
+        if "://" not in proxy_env:
+            proxy_env = f"http://{proxy_env}"
+
+        parsed = urlparse(proxy_env)
+
+        proxy_host = parsed.hostname
+        if not proxy_host:
+            logger.info("Invalid proxy hostname in model config: {proxy_host}")
+            return False
+
+        try:
+            proxy_port = parsed.port or 3128
+        except ValueError:
+
+            logger.info("Invalid proxy port in model config: {proxy_port}")
+            return False
+
+        proxy_command = f'socat - "PROXY:{proxy_host}:%h:%p,proxyport={proxy_port}"'
+        ssh_config_content = f"ProxyCommand {proxy_command}\n"
+
+        self.container.push(
+            Path(self._ssh_config_file),
+            ssh_config_content,
+            permissions=0o600,
+            make_dirs=True,
+        )
+
+        logger.info("SSH config file updated.")
+        return True
 
     def _save_ssh_key(self, ssh_key: str):
         """Save SSH key to a file."""
