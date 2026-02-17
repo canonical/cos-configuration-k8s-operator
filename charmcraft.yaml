@@ -57,6 +57,8 @@ provides:
     interface: prometheus_scrape
   grafana-dashboards:
     interface: grafana_dashboard
+  sloth:
+    interface: sloth
 
 requires:
   loki-config:
@@ -130,6 +132,10 @@ config:
       type: string
       description: Relative path in repo to grafana dashboards.
       default: "grafana_dashboards"
+    slos_path:
+      type: string
+      description: Relative path in repo to SLO (Service Level Objective) files for sloth.
+      default: "slos"
 
 actions:
   sync-now:
