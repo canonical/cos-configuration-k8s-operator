@@ -17,6 +17,7 @@ to the following operators:
   Alert rules and recording rules
 * [Loki K8s][Loki operator] charmed operator: Alert rules
 * [Grafana K8s][Grafana operator] charmed operator: dashboards
+* [Sloth K8s][Sloth operator] charmed operator: SLO (Service Level Objective) specifications
 
 Internally, the charm is using [`git-sync`][Git sync] to sync a remote repo with the local copy.
 The repo syncs on `update-status` or when the user manually runs the `sync-now` action.
@@ -45,6 +46,9 @@ juju relate cos-configuration-k8s loki-k8s
 
 juju config cos-configuration-k8s grafana_dashboards_path=dashboards/prod/grafana/
 juju relate cos-configuration-k8s grafana-k8s
+
+juju config cos-configuration-k8s slos_path=slos/prod/
+juju relate cos-configuration-k8s sloth-k8s
 ```
 
 ### Verification
@@ -106,6 +110,7 @@ Currently, supported relations are:
 - `prometheus-config`, for interfacing with [prometheus][Prometheus operator].
 - `loki-config`, for interfacing with [loki][Loki operator].
 - `grafana-dashboards`, for interfacing with [grafana][Grafana operator].
+- `sloth`, for interfacing with [sloth][Sloth operator].
 
 ### About Juju Topology
 
@@ -140,4 +145,5 @@ Workload images are archived on charmhub by revision number.
 [Prometheus operator]: https://charmhub.io/prometheus-k8s
 [Loki operator]: https://charmhub.io/loki-k8s
 [Grafana operator]: https://charmhub.io/grafana-k8s
+[Sloth operator]: https://charmhub.io/sloth-k8s
 [Git sync]: https://github.com/kubernetes/git-sync

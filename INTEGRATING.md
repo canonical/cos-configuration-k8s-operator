@@ -8,6 +8,7 @@ flowchart TD
     prom-rules
     loki-rules
     grafana-dashboards
+    slo-specs
   end
 
   repo -.-|juju config| cos-config
@@ -16,10 +17,12 @@ flowchart TD
     cos-config ---|prometheus_scrape| prometheus
     cos-config ---|loki_push_api| loki
     cos-config ---|grafana_dashboard| grafana
+    cos-config ---|sloth| sloth
   end
 
   click prometheus https://github.com/canonical/prometheus-k8s-operator/
   click loki https://github.com/canonical/loki-k8s-operator/
   click grafana https://github.com/canonical/grafana-k8s-operator/
+  click sloth https://github.com/canonical/sloth-k8s-operator/
   click prometheus-scrape-config https://github.com/canonical/prometheus-scrape-config-k8s-operator/
 ```
