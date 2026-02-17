@@ -125,7 +125,7 @@ class SlothSloProvider:
                     if content:
                         slo_contents.append(content)
                         logger.debug("Read SLO file: %s", file_path)
-            except Exception as e:
+            except (IOError, OSError, PermissionError) as e:
                 logger.warning("Failed to read SLO file %s: %s", file_path, e)
 
         if not slo_contents:
