@@ -14,6 +14,7 @@ dependencies = [
   "pydantic",
   "requests",
   "cosl",
+  "charmlibs-interfaces-sloth>=0.1.0",
 ]
 
 [project.optional-dependencies]

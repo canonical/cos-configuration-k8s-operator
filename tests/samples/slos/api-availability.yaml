@@ -1,0 +1,29 @@
+version: prometheus/v1
+service: api-service
+labels:
+  team: platform
+slos:
+  - name: requests-availability
+    objective: 99.9
+    description: "99.9% of API requests should succeed"
+    sli:
+      events:
+        error_query: 'sum(rate(http_requests_total{status=~"5.."}[{{.window}}]))'
+        total_query: 'sum(rate(http_requests_total[{{.window}}]))'
+    alerting:
+      name: APIHighErrorRate
+      labels:
+        severity: critical
+      annotations:
+        summary: "High error rate on API"
+  - name: requests-latency
+    objective: 99.5
+    description: "99.5% of API requests should complete within 500ms"
+    sli:
+      events:
+        error_query: 'sum(rate(http_request_duration_seconds_bucket{le="0.5"}[{{.window}}]))'
+        total_query: 'sum(rate(http_request_duration_seconds_count[{{.window}}]))'
+    alerting:
+      name: APIHighLatency
+      labels:
+        severity: warning
