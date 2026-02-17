@@ -1,0 +1,10 @@
+LICENSE
+README.md
+pyproject.toml
+src/charm.py
+src/secrets_helper.py
+src/cos_configuration_k8s.egg-info/PKG-INFO
+src/cos_configuration_k8s.egg-info/SOURCES.txt
+src/cos_configuration_k8s.egg-info/dependency_links.txt
+src/cos_configuration_k8s.egg-info/requires.txt
+src/cos_configuration_k8s.egg-info/top_level.txt
