@@ -12,7 +12,6 @@ import shutil
 from pathlib import Path
 from typing import Final, List, Optional, Tuple, cast
 
-from charmlibs.interfaces.sloth import SlothProvider
 from charms.grafana_k8s.v0.grafana_dashboard import GrafanaDashboardProvider
 from charms.loki_k8s.v0.loki_push_api import LokiPushApiConsumer
 from charms.prometheus_k8s.v0.prometheus_scrape import PrometheusRulesProvider
@@ -29,6 +28,7 @@ from ops.model import (
 from ops.pebble import APIError, ChangeError, ExecError
 
 from secrets_helper import SecretGetter
+from sloth import SlothSloProvider
 
 logger = logging.getLogger(__name__)
 
@@ -52,102 +52,6 @@ class SyncError(Exception):
         self.details = details
 
         super().__init__(self.message)
-
-
-class SlothSloProvider:
-    """Wrapper class for SlothProvider that reads SLO files from disk.
-
-    This class provides a file-based interface for the SlothProvider library,
-    similar to how PrometheusRulesProvider and GrafanaDashboardProvider work.
-    It reads YAML files from a directory and forwards them to the Sloth charm.
-
-    Args:
-        charm: The charm instance.
-        relation_name: Name of the sloth relation.
-        slos_dir: Path to directory containing SLO YAML files.
-    """
-
-    def __init__(self, charm: CharmBase, relation_name: str, slos_dir: str):
-        """Initialize the SlothSloProvider wrapper.
-
-        Args:
-            charm: The charm instance.
-            relation_name: Name of the sloth relation.
-            slos_dir: Path to directory containing SLO YAML files.
-        """
-        self._charm = charm
-        self._relation_name = relation_name
-        self._slos_dir = slos_dir
-        # Initialize the underlying SlothProvider with inject_topology=False
-        # because cos-configuration doesn't inject topology (see README about Juju Topology)
-        self._provider = SlothProvider(charm, relation_name, inject_topology=False)
-
-    def _collect_slo_file_paths(self) -> List[str]:
-        """Collect paths to all SLO YAML files in the directory.
-
-        Returns:
-            List of file paths to YAML files, or empty list if none found.
-        """
-        slo_files = []
-        for root, _, files in os.walk(self._slos_dir):
-            for file in files:
-                if file.endswith((".yaml", ".yml")):
-                    file_path = os.path.join(root, file)
-                    slo_files.append(file_path)
-        return slo_files
-
-    def _read_slo_files(self) -> str:
-        """Read all SLO YAML files from the slos directory.
-
-        Returns:
-            Combined YAML string with all SLO specifications, separated by '---'.
-            Returns empty string if directory doesn't exist or contains no files.
-        """
-        if not os.path.exists(self._slos_dir):
-            logger.debug("SLO directory does not exist: %s", self._slos_dir)
-            return ""
-
-        if not os.path.isdir(self._slos_dir):
-            logger.warning("SLO path is not a directory: %s", self._slos_dir)
-            return ""
-
-        slo_files = self._collect_slo_file_paths()
-        if not slo_files:
-            logger.debug("No SLO files found in %s", self._slos_dir)
-            return ""
-
-        # Read all files and combine them with YAML document separator
-        slo_contents = []
-        for file_path in sorted(slo_files):
-            try:
-                with open(file_path, "r") as f:
-                    content = f.read().strip()
-                    if content:
-                        slo_contents.append(content)
-                        logger.debug("Read SLO file: %s", file_path)
-            except (IOError, OSError, PermissionError) as e:
-                logger.warning("Failed to read SLO file %s: %s", file_path, e)
-
-        if not slo_contents:
-            return ""
-
-        # Join with YAML document separator
-        return "\n---\n".join(slo_contents)
-
-    def _reinitialize_slo_specs(self):
-        """Reinitialize SLO specifications from disk.
-
-        This method is called when the git repository content changes.
-        It reads all SLO files from the configured directory and sends them
-        to the Sloth charm via the relation.
-        """
-        logger.info("Reinitializing SLO specs from %s", self._slos_dir)
-        slo_config = self._read_slo_files()
-        if slo_config:
-            self._provider.provide_slos(slo_config)
-            logger.info("Provided SLO config to sloth relation")
-        else:
-            logger.debug("No SLO config to provide")
 
 
 @trace_charm(
