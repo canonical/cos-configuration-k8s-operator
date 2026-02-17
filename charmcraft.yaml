@@ -61,6 +61,7 @@ provides:
     interface: sloth
     description: |
       Forward SLO specifications from git repositories to sloth-k8s-operator.
+    optional: true
 
 requires:
   loki-config:
