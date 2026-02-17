@@ -211,7 +211,6 @@ class COSConfigCharm(CharmBase):
             self._update_hash_and_rel_data()
             return
 
-        # TODO: add logic from _on_config_changed here
         if self.config.get("git_ssh_key") or self.config.get("git_ssh_key_secret"):
             self._trust_ssh_remote()
             if not self._push_ssh_config():
