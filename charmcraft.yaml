@@ -59,6 +59,8 @@ provides:
     interface: grafana_dashboard
   sloth:
     interface: sloth
+    description: |
+      Forward SLO specifications from git repositories to sloth-k8s-operator.
 
 requires:
   loki-config:
