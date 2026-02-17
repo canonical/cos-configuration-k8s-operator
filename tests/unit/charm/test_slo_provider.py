@@ -12,7 +12,8 @@ import ops
 from ops.testing import Harness
 
 import charm
-from charm import COSConfigCharm, SlothSloProvider
+from charm import COSConfigCharm
+from sloth import SlothSloProvider
 
 logger = logging.getLogger(__name__)
 
