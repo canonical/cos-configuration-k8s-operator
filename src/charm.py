@@ -29,6 +29,7 @@ from ops.model import (
 from ops.pebble import APIError, ChangeError, ExecError
 
 from secrets_helper import SecretGetter
+from sloth import SlothSloProvider
 
 logger = logging.getLogger(__name__)
 
@@ -81,6 +82,7 @@ class COSConfigCharm(CharmBase):
     prometheus_rw_relation_name = "send-remote-write"
     loki_relation_name = "loki-config"
     grafana_relation_name = "grafana-dashboards"
+    sloth_relation_name = "sloth"
 
     _hash_placeholder = "failed to fetch hash"
     _ssh_config_file = "/root/.ssh/config"
@@ -138,6 +140,7 @@ class COSConfigCharm(CharmBase):
             self.on[self.prometheus_relation_name].relation_joined,
             self.on[self.loki_relation_name].relation_joined,
             self.on[self.grafana_relation_name].relation_joined,
+            self.on[self.sloth_relation_name].relation_joined,
         ]:
             self.framework.observe(e, self._on_relation_joined)
 
@@ -186,6 +189,13 @@ class COSConfigCharm(CharmBase):
             self,
             self.grafana_relation_name,
             dashboards_path=os.path.join(self._repo_path, grafana_dashboards_path),
+        )
+
+        slos_path = cast(str, self.config.get("slos_path"))
+        self.sloth_slo_provider = SlothSloProvider(
+            self,
+            self.sloth_relation_name,
+            slos_dir=os.path.join(self._repo_path, slos_path),
         )
 
     @property
@@ -448,6 +458,7 @@ class COSConfigCharm(CharmBase):
             self.remote_write_rules_provider._reinitialize_alert_rules()
             self.loki_rules_provider._reinitialize_alert_rules()
             self.grafana_dashboards_provider._reinitialize_dashboard_data(inject_dropdowns=False)
+            self.sloth_slo_provider._reinitialize_slo_specs()
             self._stored_set("reinit_without_topology_dropdowns", "Done")
             self._stored_set("hash", current_hash)
 

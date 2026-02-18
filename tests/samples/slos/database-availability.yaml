@@ -1,0 +1,12 @@
+version: prometheus/v1
+service: database-service
+labels:
+  team: data
+slos:
+  - name: query-availability
+    objective: 99.95
+    description: "99.95% of database queries should succeed"
+    sli:
+      events:
+        error_query: 'sum(rate(db_queries_total{status="error"}[{{.window}}]))'
+        total_query: 'sum(rate(db_queries_total[{{.window}}]))'

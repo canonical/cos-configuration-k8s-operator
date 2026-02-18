@@ -57,6 +57,11 @@ provides:
     interface: prometheus_scrape
   grafana-dashboards:
     interface: grafana_dashboard
+  sloth:
+    interface: sloth
+    description: |
+      Forward SLO specifications from git repositories to sloth-k8s-operator.
+    optional: true
 
 requires:
   loki-config:
@@ -130,6 +135,10 @@ config:
       type: string
       description: Relative path in repo to grafana dashboards.
       default: "grafana_dashboards"
+    slos_path:
+      type: string
+      description: Relative path in repo to SLO (Service Level Objective) files for sloth.
+      default: "slos"
 
 actions:
   sync-now:
