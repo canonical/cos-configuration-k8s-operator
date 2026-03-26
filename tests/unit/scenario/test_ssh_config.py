@@ -182,4 +182,4 @@ def test_blocked_when_remote_not_in_known_hosts(ctx, base_state, private_key_cle
 
     # THEN the charm blocks because the remote is not in known_hosts_config
     assert state_out.unit_status.name == "blocked"
-    assert "known_hosts_config" in state_out.unit_status.message
+    assert "Unknown host; see debug-log" in state_out.unit_status.message

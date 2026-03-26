@@ -30,6 +30,7 @@ from ops.pebble import APIError, ChangeError, ExecError
 
 from secrets_helper import SecretGetter
 from sloth import SlothSloProvider
+from utils import extract_remote, remote_in_known_hosts
 
 logger = logging.getLogger(__name__)
 
@@ -224,8 +225,7 @@ class COSConfigCharm(CharmBase):
         if self.config.get("git_ssh_key") or self.config.get("git_ssh_key_secret"):
             if not self._trust_ssh_remote():
                 self.unit.status = BlockedStatus(
-                    "Remote host not found in known_hosts_config - "
-                    "see debug-log"
+                    "Unknown host; see debug-log"
                 )
                 return
             if not self._push_ssh_config():
@@ -510,23 +510,13 @@ class COSConfigCharm(CharmBase):
         self.container.push(self._known_hosts_file, known_hosts_content, make_dirs=True)
         logger.info("known_hosts file written from config")
 
-        if not (repo := cast(str, self.config.get("git_repo"))):
+        repo = cast(str, self.config.get("git_repo", ""))
+        remote = extract_remote(repo)
+        if not remote:
+            logger.info(f"Unable to parse SSH remote from repo URL {repo}; skipping known_hosts check")
             return True
 
-        # Parse remotes in different forms, specifically:
-        # - git@<remote>:<user>/...
-        # - git+ssh://<user>@<remote>/...
-        remote_regex = r"@(.+?)[:/]"
-        matches: list = re.findall(remote_regex, repo)
-        if not matches:
-            return True
-
-        remote = matches[0]
-        logger.debug(f"remote extracted from the repo: {remote}")
-
-        # Check that at least one line in known_hosts starts with the remote hostname.
-        known_hosts_lines = known_hosts_content.splitlines()
-        if not any(line.split()[0] == remote for line in known_hosts_lines if line.strip() and not line.startswith("#")):
+        if not remote_in_known_hosts(remote, known_hosts_content):
             logger.error(
                 "Remote %s not found in known_hosts_config. "
                 "Update the known_hosts_config Juju config option to include this host's public key.",
