@@ -222,7 +222,12 @@ class COSConfigCharm(CharmBase):
             return
 
         if self.config.get("git_ssh_key") or self.config.get("git_ssh_key_secret"):
-            self._trust_ssh_remote()
+            if not self._trust_ssh_remote():
+                self.unit.status = BlockedStatus(
+                    "Remote host not found in known_hosts_config - "
+                    "see debug-log"
+                )
+                return
             if not self._push_ssh_config():
                 self.unit.status = BlockedStatus(
                 "Invalid proxy configuration - use see debug-log"
@@ -493,26 +498,43 @@ class COSConfigCharm(CharmBase):
         """Event handler for ConfigChangedEvent."""
         self._common_exit_hook()
 
-    def _trust_ssh_remote(self):
-        """Cleanup known_hosts and add the remote public SSH key."""
+    def _trust_ssh_remote(self) -> bool:
+        """Write known_hosts to the container and verify the remote is trusted.
+
+        Returns:
+            True if the remote is present in known_hosts (or no remote could be
+            parsed).  False if the remote is missing, in which case the caller
+            should block.
+        """
+        known_hosts_content = cast(str, self.config.get("known_hosts_config", ""))
+        self.container.push(self._known_hosts_file, known_hosts_content, make_dirs=True)
+        logger.info("known_hosts file written from config")
+
         if not (repo := cast(str, self.config.get("git_repo"))):
-            return
+            return True
+
         # Parse remotes in different forms, specifically:
         # - git@<remote>:<user>/...
         # - git+ssh://<user>@<remote>/...
         remote_regex = r"@(.+?)[:/]"
         matches: list = re.findall(remote_regex, repo)
-        if matches:
-            remote = matches[0]
-            logger.debug(f"remote extracted from the repo: {remote}")
-            try:
-                process = self.container.exec(["ssh-keyscan", remote])
-                stdout, stderr = process.wait_output()
-            except ExecError as e:
-                raise SyncError(f"Exited with code {e.exit_code}.", e.stderr) from e
-            self.container.remove_path(self._known_hosts_file, recursive=True)
-            self.container.push(self._known_hosts_file, stdout, make_dirs=True)
-            logger.info(f"{remote} public keys added to known_hosts")
+        if not matches:
+            return True
+
+        remote = matches[0]
+        logger.debug(f"remote extracted from the repo: {remote}")
+
+        # Check that at least one line in known_hosts starts with the remote hostname.
+        known_hosts_lines = known_hosts_content.splitlines()
+        if not any(line.split()[0] == remote for line in known_hosts_lines if line.strip() and not line.startswith("#")):
+            logger.error(
+                "Remote %s not found in known_hosts_config. "
+                "Update the known_hosts_config Juju config option to include this host's public key.",
+                remote,
+            )
+            return False
+
+        return True
 
     def _push_ssh_config(self) -> bool:
         """Push the SSH config necessary for cloning using SSH, using proxy if set."""

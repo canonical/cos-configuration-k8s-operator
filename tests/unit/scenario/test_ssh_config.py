@@ -166,3 +166,20 @@ def test_private_key_warns_user(ctx, base_state, git_repo, private_key_cleartext
 
     # THEN the the user is warned of their mistake
     assert 'WARN: cleartext ssh key' in state_out.unit_status.message
+
+
+def test_blocked_when_remote_not_in_known_hosts(ctx, base_state, private_key_cleartext):
+    # GIVEN git_repo points to a remote host NOT in the default known_hosts_config
+    unknown_remote_repo = {"git_repo": "git@custom-host.example.com:user/repo.git"}
+    in_state = dataclasses.replace(
+        base_state,
+        config=unknown_remote_repo | {"git_ssh_key": private_key_cleartext},
+    )
+
+    # WHEN the config changes
+    with ctx(ctx.on.config_changed(), in_state) as mgr:
+        state_out = mgr.run()
+
+    # THEN the charm blocks because the remote is not in known_hosts_config
+    assert state_out.unit_status.name == "blocked"
+    assert "known_hosts_config" in state_out.unit_status.message
