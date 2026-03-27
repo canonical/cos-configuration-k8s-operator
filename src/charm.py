@@ -30,6 +30,7 @@ from ops.pebble import APIError, ChangeError, ExecError
 
 from secrets_helper import SecretGetter
 from sloth import SlothSloProvider
+from utils import extract_remote, remote_in_known_hosts
 
 logger = logging.getLogger(__name__)
 
@@ -222,7 +223,11 @@ class COSConfigCharm(CharmBase):
             return
 
         if self.config.get("git_ssh_key") or self.config.get("git_ssh_key_secret"):
-            self._trust_ssh_remote()
+            if not self._trust_ssh_remote():
+                self.unit.status = BlockedStatus(
+                    "Unknown host; see debug-log"
+                )
+                return
             if not self._push_ssh_config():
                 self.unit.status = BlockedStatus(
                 "Invalid proxy configuration - use see debug-log"
@@ -493,26 +498,32 @@ class COSConfigCharm(CharmBase):
         """Event handler for ConfigChangedEvent."""
         self._common_exit_hook()
 
-    def _trust_ssh_remote(self):
-        """Cleanup known_hosts and add the remote public SSH key."""
-        if not (repo := cast(str, self.config.get("git_repo"))):
-            return
-        # Parse remotes in different forms, specifically:
-        # - git@<remote>:<user>/...
-        # - git+ssh://<user>@<remote>/...
-        remote_regex = r"@(.+?)[:/]"
-        matches: list = re.findall(remote_regex, repo)
-        if matches:
-            remote = matches[0]
-            logger.debug(f"remote extracted from the repo: {remote}")
-            try:
-                process = self.container.exec(["ssh-keyscan", remote])
-                stdout, stderr = process.wait_output()
-            except ExecError as e:
-                raise SyncError(f"Exited with code {e.exit_code}.", e.stderr) from e
-            self.container.remove_path(self._known_hosts_file, recursive=True)
-            self.container.push(self._known_hosts_file, stdout, make_dirs=True)
-            logger.info(f"{remote} public keys added to known_hosts")
+    def _trust_ssh_remote(self) -> bool:
+        """Write known_hosts to the container and verify the remote is trusted.
+
+        Returns:
+            True if the remote is present in known_hosts (or no remote could be
+            parsed).  False if the remote is missing, in which case the caller
+            should block.
+        """
+        known_hosts_content = cast(str, self.config.get("known_hosts_config", ""))
+        self.container.push(self._known_hosts_file, known_hosts_content, make_dirs=True)
+
+        repo = cast(str, self.config.get("git_repo", ""))
+        remote = extract_remote(repo)
+        if not remote:
+            logger.info(f"Unable to parse SSH remote from repo URL {repo}; skipping known_hosts check")
+            return True
+
+        if not remote_in_known_hosts(remote, known_hosts_content):
+            logger.error(
+                "Remote %s not found in known_hosts_config. "
+                "Update the known_hosts_config charm config option to include this host's public key.",
+                remote,
+            )
+            return False
+
+        return True
 
     def _push_ssh_config(self) -> bool:
         """Push the SSH config necessary for cloning using SSH, using proxy if set."""
