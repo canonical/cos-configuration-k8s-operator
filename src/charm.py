@@ -508,7 +508,6 @@ class COSConfigCharm(CharmBase):
         """
         known_hosts_content = cast(str, self.config.get("known_hosts_config", ""))
         self.container.push(self._known_hosts_file, known_hosts_content, make_dirs=True)
-        logger.info("known_hosts file written from config")
 
         repo = cast(str, self.config.get("git_repo", ""))
         remote = extract_remote(repo)
@@ -519,7 +518,7 @@ class COSConfigCharm(CharmBase):
         if not remote_in_known_hosts(remote, known_hosts_content):
             logger.error(
                 "Remote %s not found in known_hosts_config. "
-                "Update the known_hosts_config Juju config option to include this host's public key.",
+                "Update the known_hosts_config charm config option to include this host's public key.",
                 remote,
             )
             return False
