@@ -131,7 +131,7 @@ class TestReinitializeCalledOnce(unittest.TestCase):
 
             # THEN reinitialization takes place only once
             self.assertEqual(self.prom_mock.call_count, 2)
-            self.assertEqual(self.loki_mock.call_count, 1)
+            self.assertEqual(self.loki_mock.call_count, 2)
             self.assertEqual(self.graf_mock.call_count, 1)
 
         finally:
@@ -187,7 +187,7 @@ class TestReinitializeCalledOnce(unittest.TestCase):
 
             # THEN reinitialization occurred only once more since repo was unset
             self.assertEqual(self.prom_mock.call_count, 2)
-            self.assertEqual(self.loki_mock.call_count, 1)
+            self.assertEqual(self.loki_mock.call_count, 4)
             self.assertEqual(self.graf_mock.call_count, 1)
 
         finally:

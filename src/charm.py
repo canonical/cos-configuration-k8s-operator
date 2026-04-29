@@ -14,7 +14,7 @@ from typing import Final, List, Optional, Tuple, cast
 from urllib.parse import urlparse
 
 from charms.grafana_k8s.v0.grafana_dashboard import GrafanaDashboardProvider
-from charms.loki_k8s.v0.loki_push_api import LokiPushApiConsumer
+from charms.loki_k8s.v1.loki_push_api import LokiPushApiConsumer
 from charms.prometheus_k8s.v0.prometheus_scrape import PrometheusRulesProvider
 from charms.tempo_coordinator_k8s.v0.charm_tracing import trace_charm
 from charms.tempo_coordinator_k8s.v0.tracing import TracingEndpointRequirer
