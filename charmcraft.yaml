@@ -26,7 +26,7 @@ description: |
   - On-demand sync via the sync-now action, in addition to periodic automatic updates.
 
 links:
-  documentation: https://discourse.charmhub.io/t/cos-configuration-k8s-docs-index/7284
+  documentation: https://documentation.ubuntu.com/observability/latest/
   website: https://charmhub.io/cos-configuration-k8s
   source: https://github.com/canonical/cos-configuration-k8s-operator
   issues: https://github.com/canonical/cos-configuration-k8s-operator/issues
