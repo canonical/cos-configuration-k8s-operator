@@ -532,9 +532,10 @@ class COSConfigCharm(CharmBase):
             or os.environ.get("JUJU_CHARM_HTTP_PROXY")
         )
 
-        if not proxy_env:
+        if not proxy_env or self.config.get("_experimental_bypass_proxy"):
             # If the an SSH file was written to the container before, remove it now.
-            # This is because when no proxy is set, we should not use an SSH
+            # This is because when no proxy is set OR the experimental bypass proxy option is enabled,
+            # we should not use an SSH
             # config file written before which specifies a proxy.
             if self.container.exists(self._ssh_config_file):
                 self.container.remove_path(self._ssh_config_file)
