@@ -590,7 +590,7 @@ class COSConfigCharm(CharmBase):
         """
         if not self.container.can_connect():
             return None
-        version_output, _ = self.container.exec(["/bin/git-sync", "-version"]).wait_output()
+        version_output, _ = self.container.exec(["/bin/git-sync", "--version"]).wait_output()
         # Output looks like this:
         # v3.5.0
         result = re.search(r"v(\d*\.\d*\.\d*)", version_output)
