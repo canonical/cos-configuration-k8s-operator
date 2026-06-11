@@ -10,6 +10,12 @@ import pytest
 import yaml
 from pytest_operator.plugin import OpsTest
 
+# Cross-base upgrades (e.g. 24.04 -> 26.04) are not supported via juju refresh.
+# The charmhub charm is built for 24.04 (Python 3.12), while the local charm
+# targets 26.04 (Python 3.14). Juju refresh only replaces charm code, not the
+# container image, so the old container's Python cannot load the new venv.
+pytestmark = pytest.mark.skip(reason="Cross-base upgrade from 24.04 to 26.04 not supported")
+
 logger = logging.getLogger(__name__)
 
 METADATA = yaml.safe_load(Path("./charmcraft.yaml").read_text())
