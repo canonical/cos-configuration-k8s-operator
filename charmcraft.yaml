@@ -86,9 +86,21 @@ requires:
     interface: loki_push_api
   tracing:
     description: |
-      Tracing endpoint for integrating with tempo.
+      Tracing endpoint for integrating with tempo (workload tracing).
     limit: 1
     interface: tracing
+  charm-tracing:
+    interface: tracing
+    optional: true
+    limit: 1
+    description: |
+      Enables sending charm traces to a distributed tracing backend such as Tempo.
+  receive-ca-cert:
+    interface: certificate_transfer
+    optional: true
+    limit: 1
+    description: |
+      Receives a CA certificate to validate TLS connections for charm tracing.
   send-remote-write:
     interface: prometheus_remote_write
     optional: true

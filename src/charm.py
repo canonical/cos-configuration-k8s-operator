@@ -13,10 +13,10 @@ from pathlib import Path
 from typing import Final, List, Optional, Tuple, cast
 from urllib.parse import urlparse
 
+import ops_tracing
 from charms.grafana_k8s.v0.grafana_dashboard import GrafanaDashboardProvider
 from charms.loki_k8s.v1.loki_push_api import LokiPushApiConsumer
 from charms.prometheus_k8s.v0.prometheus_scrape import PrometheusRulesProvider
-from charms.tempo_coordinator_k8s.v0.charm_tracing import trace_charm
 from charms.tempo_coordinator_k8s.v0.tracing import TracingEndpointRequirer
 from ops.charm import ActionEvent, CharmBase
 from ops.main import main
@@ -56,14 +56,6 @@ class SyncError(Exception):
         super().__init__(self.message)
 
 
-@trace_charm(
-    tracing_endpoint="tracing_endpoint",
-    extra_types=[
-        GrafanaDashboardProvider,
-        LokiPushApiConsumer,
-        PrometheusRulesProvider,
-    ],
-)
 class COSConfigCharm(CharmBase):
     """A Juju charm for configuring COS."""
 
@@ -92,7 +84,12 @@ class COSConfigCharm(CharmBase):
 
     def __init__(self, *args):
         super().__init__(*args)
-        self._tracing = TracingEndpointRequirer(self, protocols=["otlp_http"])
+        self._workload_tracing = TracingEndpointRequirer(self, protocols=["otlp_http"])
+        self._charm_tracing = ops_tracing.Tracing(
+            self,
+            tracing_relation_name="charm-tracing",
+            ca_relation_name="receive-ca-cert",
+        )
         # Path to the repo in the _charm_ container, which is needed for instantiating
         # PrometheusRulesProvider with the rule files (otherwise would need to fetch via pebble
         # every time).
@@ -600,9 +597,9 @@ class COSConfigCharm(CharmBase):
 
     @property
     def tracing_endpoint(self) -> Optional[str]:
-        """Otlp http endpoint for charm instrumentation."""
-        if self._tracing.is_ready():
-            return self._tracing.get_endpoint("otlp_http")
+        """Otlp http endpoint for workload instrumentation."""
+        if self._workload_tracing.is_ready():
+            return self._workload_tracing.get_endpoint("otlp_http")
         return None
 
 
