@@ -36,7 +36,7 @@ assumes:
   - juju >= 3.6
 
 platforms:
-  ubuntu@24.04:amd64:
+  ubuntu@26.04:amd64:
 
 parts:
   charm:
@@ -59,7 +59,7 @@ resources:
   git-sync-image:
     type: oci-image
     description: OCI image for git-sync
-    upstream-source: k8s.gcr.io/git-sync/git-sync:v3.6.9
+    upstream-source: ubuntu/git-sync@sha256:5a821c0e216f7c82e8462b0d95f5df6167dc6eb899c891bf8a15c31187a433f1  # renovate: oci-image tag: 4.7-26.04_edge
 
 storage:
   content-from-git:
@@ -86,9 +86,21 @@ requires:
     interface: loki_push_api
   tracing:
     description: |
-      Tracing endpoint for integrating with tempo.
+      Tracing endpoint for integrating with tempo (workload tracing).
     limit: 1
     interface: tracing
+  charm-tracing:
+    interface: tracing
+    optional: true
+    limit: 1
+    description: |
+      Enables sending charm traces to a distributed tracing backend such as Tempo.
+  receive-ca-cert:
+    interface: certificate_transfer
+    optional: true
+    limit: 1
+    description: |
+      Receives a CA certificate to validate TLS connections for charm tracing.
   send-remote-write:
     interface: prometheus_remote_write
     optional: true
