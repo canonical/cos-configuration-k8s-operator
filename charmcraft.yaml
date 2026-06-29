@@ -4,12 +4,29 @@ name: cos-configuration-k8s
 type: charm
 summary: Push user (3rd-party) rules to COS charms.
 description: |
-  Cos-configuration fetches alert rules and other settings specified in a Git repository, and
-  forwards them to downstream prometheus, loki anf grafana charms.
+  COS Configuration K8s is a Juju charm that syncs observability configurations — such as
+  Prometheus alert rules, Loki alert rules and Grafana dashboards — from
+  a Git repository and forwards them to the corresponding COS charms. It is a complementary
+  charm to the Canonical Observability Stack (COS):
+  https://documentation.ubuntu.com/observability
+
+  This charm enables an infrastructure-as-code workflow for observability, allowing operators
+  to manage alert rules and dashboards in version control and have them automatically applied
+  to the running stack.
+
+  Key features:
+
+  - Automatic synchronization of configurations from a Git repository using git-sync.
+  - Forwarding of Prometheus alert and recording rules, Loki alert rules and Grafana dashboards
+    to their respective COS charms via Juju relations.
+  - Support for private repositories via SSH keys, including Juju secrets integration for
+    secure key storage.
+  - Configurable paths within the repository for each type of configuration.
+  - Configurable branch, revision, and clone depth for fine-grained control over the sync.
+  - On-demand sync via the sync-now action, in addition to periodic automatic updates.
 
 links:
-  documentation: https://discourse.charmhub.io/t/cos-configuration-k8s-docs-index/7284
-  website: https://charmhub.io/cos-configuration-k8s
+  documentation: https://documentation.ubuntu.com/observability/track-2/
   source: https://github.com/canonical/cos-configuration-k8s-operator
   issues: https://github.com/canonical/cos-configuration-k8s-operator/issues
 
