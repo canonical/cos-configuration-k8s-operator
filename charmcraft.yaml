@@ -27,7 +27,6 @@ description: |
 
 links:
   documentation: https://documentation.ubuntu.com/observability/latest/
-  website: https://charmhub.io/cos-configuration-k8s
   source: https://github.com/canonical/cos-configuration-k8s-operator
   issues: https://github.com/canonical/cos-configuration-k8s-operator/issues
 
