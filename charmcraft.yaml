@@ -58,7 +58,7 @@ resources:
   git-sync-image:
     type: oci-image
     description: OCI image for git-sync
-    upstream-source: ubuntu/git-sync@sha256:5a821c0e216f7c82e8462b0d95f5df6167dc6eb899c891bf8a15c31187a433f1  # renovate: oci-image tag: 4.7-26.04_edge
+    upstream-source: ubuntu/git-sync@sha256:c697bed78c0e2fbb9ef274cc4be693d74da27327a7158625a3cd2d39dd9437e2  # renovate: oci-image tag: 4.7-26.04_edge
 
 storage:
   content-from-git:
