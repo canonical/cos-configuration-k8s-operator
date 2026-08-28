@@ -168,6 +168,49 @@ def test_private_key_warns_user(ctx, base_state, git_repo, private_key_cleartext
     assert 'WARN: cleartext ssh key' in state_out.unit_status.message
 
 
+@pytest.mark.parametrize(
+    "proxy_env, bypass_proxy, expect_ssh_config_written",
+    [
+        pytest.param(None, False, False),
+        pytest.param("http://proxy.example.com:3128", False, True),
+        pytest.param("http://proxy.example.com:3128", True, False),
+        pytest.param(None, True, False),
+    ],
+)
+def test_bypass_proxy_ssh_config(
+    ctx,
+    base_state,
+    git_repo,
+    private_key_cleartext,
+    proxy_env,
+    bypass_proxy,
+    expect_ssh_config_written,
+    monkeypatch,
+):
+    # GIVEN git_ssh_key is set and _experimental_bypass_proxy is configured
+    in_state = dataclasses.replace(
+        base_state,
+        config=git_repo
+        | {"git_ssh_key": private_key_cleartext, "_experimental_bypass_proxy": bypass_proxy},
+    )
+
+    # AND the proxy environment variables are set or unset accordingly
+    monkeypatch.delenv("JUJU_CHARM_HTTPS_PROXY", raising=False)
+    monkeypatch.delenv("JUJU_CHARM_HTTP_PROXY", raising=False)
+    if proxy_env:
+        monkeypatch.setenv("JUJU_CHARM_HTTPS_PROXY", proxy_env)
+
+    # WHEN the config changes
+    with ctx(ctx.on.config_changed(), in_state) as mgr:
+        charm = mgr.charm
+        state_out = mgr.run()
+
+    # THEN the SSH config file is present or absent depending on proxy/bypass settings
+    container_fs = state_out.get_container(container_name).get_filesystem(ctx)
+    ssh_config_path = container_fs / Path(charm._ssh_config_file).relative_to("/")
+    assert ssh_config_path.exists() == expect_ssh_config_written
+
+
 def test_blocked_when_remote_not_in_known_hosts(ctx, base_state, private_key_cleartext):
     # GIVEN git_repo points to a remote host NOT in the default known_hosts_config
     unknown_remote_repo = {"git_repo": "git@custom-host.example.com:user/repo.git"}
