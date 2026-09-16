@@ -24,7 +24,7 @@ logger = logging.getLogger(__name__)
 @pytest.fixture(scope="function")
 def git_sync_container():
     yield Container(
-        "git-sync", execs={Exec(["/git-sync"], return_code=0, stdout="0.0")}, can_connect=True
+        "git-sync", execs={Exec(["/bin/git-sync"], return_code=0, stdout="0.0")}, can_connect=True
     )
 
 
