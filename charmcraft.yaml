@@ -187,12 +187,14 @@ config:
     _experimental_bypass_proxy:
       type: boolean
       description: >
-        Bypass proxy for git operations. This is an experimental option and should be used with caution,
-        as it may have security implications. It can be useful in environments where the proxy is known to cause issues with git operations, but it will cause all git traffic to bypass the proxy,
-        which may not be desirable in all cases.
-
-        ATTENTION: this config option is completely for experimental and workaround purposes.
-        It WILL be dropped in the future and should not be used as a long-term solution for any issues with git operations and proxies.
+        ATTENTION: this config option is for experimental and workaround purposes.
+        It will be dropped before the end of the 28.04 cycle.
+        It should not be used as a long-term solution for any issues with git operations and proxies.
+      
+        Bypass proxy for git operations. Use with caution, as it may have security implications. 
+        It can be useful in environments where the proxy is known to cause issues with git operations, but it will cause all git traffic to bypass the proxy,
+        which may not be desirable or possible in all cases. 
+        It is recommended that you only use this option when absolutely necessary, such as when your proxy is causing issues with git+ssh operations.
       default: false
 
 actions:
